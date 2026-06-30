@@ -39,9 +39,19 @@ Your partner does the same on his machine (his own identity + his own bot/webhoo
 
 See `DESIGN.md` for the full design and `skill/SKILL.md` for how the live Claude uses it.
 
-## Install as a skill
-Symlink or copy `skill/SKILL.md` into `~/.claude/skills/relay/` (and keep this
-repo reachable for `scripts/relay.py`). Same install on your partner's machine.
+## Install on a new machine (e.g. your partner's)
+1. Get the repo (clone it, or unzip it somewhere stable). Needs Python 3.11+ and Claude Code.
+2. Run the installer from the repo root (Windows):
+   ```powershell
+   powershell -ExecutionPolicy Bypass -File .\install.ps1
+   ```
+   It installs the `/discord` command + `relay` skill for the current user, pointed at
+   this repo. (macOS/Linux: copy `commands/discord.md` → `~/.claude/commands/discord.md`
+   replacing `{{RELAY_REPO}}` with the repo path, and `skill/SKILL.md` → `~/.claude/skills/relay/`.)
+3. `python scripts/relay.py init` → `validate` → use `/discord` in a live session.
+
+Each person installs their own copy with their **own** identity + bot token + webhooks,
+pointed at the **same** Discord channel ids. No secrets are shared.
 
 ## Layout
 ```
