@@ -170,6 +170,70 @@ def cmd_whoami(args):
     print(f"session {sid}: {'owns room ' + room if room else 'owns no room'}")
 
 
+def cmd_init(args):
+    """Interactive setup wizard — writes relay.config.json. Run once per machine."""
+    path = cfg_mod.CONFIG_PATH
+    existing = {}
+    if path.exists():
+        existing = json.loads(path.read_text(encoding="utf-8-sig") or "{}")
+
+    def ask(prompt, default=None):
+        suffix = f" [{default}]" if default else ""
+        return input(f"{prompt}{suffix}: ").strip() or (default or "")
+
+    print("cofounder-relay setup — Enter keeps the [default].")
+    cfg = {
+        "identity": ask("Your name (labels your outbound messages)", existing.get("identity")),
+        "transport": ask("Transport (discord/mock)", existing.get("transport", "discord")),
+        "channels": dict(existing.get("channels", {})),
+    }
+    if cfg["transport"] == "discord":
+        cfg["discord_bot_token"] = ask(
+            "Discord bot token (reads messages)", existing.get("discord_bot_token")
+        )
+    print("\nAdd channels — one per conversation/room. Blank channel key to finish.")
+    while True:
+        name = input("  channel key (e.g. steady-imports): ").strip()
+        if not name:
+            break
+        cfg["channels"][name] = {
+            "channel_id": input("    channel_id: ").strip(),
+            "webhook_url": input("    webhook_url: ").strip(),
+        }
+    path.write_text(json.dumps(cfg, indent=2), encoding="utf-8")
+    print(f"\nwrote {path}\nNext: python scripts/relay.py validate")
+
+
+def cmd_validate(args):
+    """Handshake test: post a probe and read it back, per channel — proves this
+    node can both post (webhook) and read (bot token) each room end-to-end."""
+    cfg = cfg_mod.load_config()
+    tp = transport_mod.make_transport(cfg)
+    channels = [args.channel] if args.channel else list(cfg.get("channels", {}).keys())
+    if not channels:
+        raise SystemExit("no channels to validate")
+    all_ok = True
+    for ch in channels:
+        probe = f"relay online check {time.strftime('%H:%M:%S')}"
+        try:
+            tp.send(ch, probe, cfg["identity"])
+            seen = False
+            for _ in range(3):  # webhook posts can take a beat to appear
+                msgs = tp.fetch_since(ch, None, limit=20)
+                if any(probe in m.get("text", "") for m in msgs):
+                    seen = True
+                    break
+                time.sleep(1)
+            print(f"  {ch}: {'PASS — post + read OK' if seen else 'FAIL — posted but could not read back'}")
+            all_ok = all_ok and seen
+        except Exception as e:
+            print(f"  {ch}: FAIL — {e}")
+            all_ok = False
+    print("validate:", "ALL PASS" if all_ok else "FAILURES — fix config and retry")
+    if not all_ok:
+        raise SystemExit(1)
+
+
 def cmd_channels(args):
     cfg = cfg_mod.load_config()
     chans = cfg.get("channels", {})
@@ -221,6 +285,12 @@ def build_parser() -> argparse.ArgumentParser:
 
     wi = sub.add_parser("whoami", help="show which room this conversation owns")
     wi.set_defaults(func=cmd_whoami)
+
+    ini = sub.add_parser("init", help="interactive setup wizard (writes relay.config.json)")
+    ini.set_defaults(func=cmd_init)
+
+    va = sub.add_parser("validate", help="handshake test: post a probe and read it back")
+    va.set_defaults(func=cmd_validate)
     return p
 
 

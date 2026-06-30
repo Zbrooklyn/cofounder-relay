@@ -25,10 +25,13 @@ python scripts/relay.py send "hello from my Claude"
 python scripts/relay.py check
 ```
 
-## Going live
-1. Follow `docs/DISCORD-SETUP.md` (≈10 min, one time) → get a bot token + per-channel webhook + channel id.
-2. Put them in `relay.config.json`, set `"transport": "discord"`.
-3. `python scripts/relay.py channels` to verify, then `send` / `check`.
+## Going live (≈10 min, one time)
+1. Follow `docs/DISCORD-SETUP.md` → create the server, bot (token), and a webhook + channel id per room.
+2. Run the wizard: `python scripts/relay.py init` (enter identity, bot token, each channel).
+3. Prove the link: `python scripts/relay.py validate` (posts a probe and reads it back per room).
+4. Use it from a live conversation: `/discord ask David for the Q3 numbers`.
+
+Your partner does the same on his machine (his own identity + his own bot/webhook, same channel ids).
 
 ## The two modes
 - **Mode 1 — invoked:** `relay send "<text>"` and `relay check`. Default, lowest risk.

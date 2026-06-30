@@ -100,22 +100,35 @@ class DiscordTransport:
             )
         return msgs
 
-    def _http(self, method: str, url: str, payload: dict | None, headers: dict | None = None):
+    def _http(self, method: str, url: str, payload: dict | None, headers: dict | None = None, tries: int = 3):
         data = json.dumps(payload).encode("utf-8") if payload is not None else None
-        req = urllib.request.Request(url, data=data, method=method)
-        req.add_header("Content-Type", "application/json")
-        req.add_header("User-Agent", "cofounder-relay/1.0")
-        for k, v in (headers or {}).items():
-            req.add_header(k, v)
-        try:
-            with urllib.request.urlopen(req, timeout=30) as resp:
-                text = resp.read().decode("utf-8")
-                return json.loads(text) if text else {}
-        except urllib.error.HTTPError as e:
-            detail = e.read().decode("utf-8", "replace")
-            raise TransportError(f"Discord {method} {url.split('?')[0]} -> {e.code}: {detail}")
-        except urllib.error.URLError as e:
-            raise TransportError(f"network error calling Discord: {e}")
+        endpoint = url.split("?")[0]
+        for attempt in range(tries):
+            req = urllib.request.Request(url, data=data, method=method)
+            req.add_header("Content-Type", "application/json")
+            req.add_header("User-Agent", "cofounder-relay/1.0")
+            for k, v in (headers or {}).items():
+                req.add_header(k, v)
+            try:
+                with urllib.request.urlopen(req, timeout=30) as resp:
+                    text = resp.read().decode("utf-8")
+                    return json.loads(text) if text else {}
+            except urllib.error.HTTPError as e:
+                body = e.read().decode("utf-8", "replace")
+                # 429 rate limit: honor retry_after and retry
+                if e.code == 429 and attempt < tries - 1:
+                    try:
+                        retry_after = float(json.loads(body).get("retry_after", 1))
+                    except Exception:
+                        retry_after = 1.0
+                    time.sleep(min(retry_after + 0.1, 5))
+                    continue
+                raise TransportError(f"Discord {method} {endpoint} -> {e.code}: {body}")
+            except urllib.error.URLError as e:
+                if attempt < tries - 1:  # transient network blip — one retry
+                    time.sleep(1)
+                    continue
+                raise TransportError(f"network error calling Discord {endpoint}: {e}")
 
 
 # --------------------------------------------------------------------------- #
