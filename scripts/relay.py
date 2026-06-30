@@ -142,13 +142,32 @@ def cmd_watch(args):
 
 
 def cmd_bind(args):
+    channel = args.channel.strip()
     if args.session:
-        cfg_mod.bind_session(args.session, args.channel.strip())
-        print(f"bound session '{args.session}' to channel '{args.channel}'")
+        owner = cfg_mod.room_owner(channel)
+        if owner and owner.get("session_id") != args.session and not args.force:
+            raise SystemExit(
+                f"room '{channel}' is already attached to a different conversation "
+                f"(session {owner.get('session_id')}). Re-run with --force to take it over."
+            )
+        if args.force and owner and owner.get("session_id") != args.session:
+            cfg_mod.release_room(channel)
+        status, _ = cfg_mod.claim_room(channel, args.session, getattr(args, "transcript", None))
+        print(f"conversation {args.session} attached to room '{channel}' ({status})")
         return
     marker = Path.cwd() / ".relay-channel"
-    marker.write_text(args.channel.strip() + "\n", encoding="utf-8")
-    print(f"bound this directory to channel '{args.channel}' ({marker})")
+    marker.write_text(channel + "\n", encoding="utf-8")
+    print(f"bound this directory to channel '{channel}' ({marker})")
+
+
+def cmd_whoami(args):
+    """Show which room (if any) the current conversation owns."""
+    sid = cfg_mod.current_session_id()
+    if not sid:
+        print("no session id (set RELAY_SESSION_ID); cannot resolve owned room")
+        return
+    room = cfg_mod.owned_room(sid)
+    print(f"session {sid}: {'owns room ' + room if room else 'owns no room'}")
 
 
 def cmd_channels(args):
@@ -190,13 +209,18 @@ def build_parser() -> argparse.ArgumentParser:
     w.add_argument("--max-iterations", type=int, default=0, help="stop after N polls (0=forever)")
     w.set_defaults(func=cmd_watch)
 
-    b = sub.add_parser("bind", help="bind this conversation/dir to a channel key")
+    b = sub.add_parser("bind", help="attach this conversation/dir to a channel key")
     b.add_argument("channel")
-    b.add_argument("--session", help="bind a Claude session id (else binds the current directory)")
+    b.add_argument("--session", help="attach a Claude session id (else binds the current directory)")
+    b.add_argument("--transcript", help="transcript path of the conversation (recorded with the binding)")
+    b.add_argument("--force", action="store_true", help="take over a room owned by another conversation")
     b.set_defaults(func=cmd_bind)
 
     ch = sub.add_parser("channels", help="list configured channels")
     ch.set_defaults(func=cmd_channels)
+
+    wi = sub.add_parser("whoami", help="show which room this conversation owns")
+    wi.set_defaults(func=cmd_whoami)
     return p
 
 

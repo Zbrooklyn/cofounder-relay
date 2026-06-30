@@ -2,7 +2,7 @@
 relay.config.json
 .relay-state.json
 .relay-channel
-.relay-sessions.json
+.relay-bindings.json
 .node_alive
 inbox/
 outbox/

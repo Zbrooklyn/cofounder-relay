@@ -114,23 +114,78 @@ def touch_heartbeat() -> None:
     HEARTBEAT_PATH.write_text(time.strftime("%Y-%m-%dT%H:%M:%S"), encoding="utf-8")
 
 
-# ---- session-scoped channel binding ----------------------------------------
-# Ties a Claude conversation (by session id) to its room, so multiple
-# conversations launched from the same directory each answer from their own
-# channel without a manual --channel.
+# ---- room ownership: one conversation thread per room (1:1) -----------------
+# A room (channel) is owned by exactly ONE Claude conversation at a time, and a
+# conversation owns at most one room. This is how the system "remembers the
+# thread it's attached to" and refuses to double-attach. The owning conversation
+# is identified by its Claude session id (stable across same-dir /resume).
 
-def _session_bindings() -> dict:
-    return _read_json(ROOT / ".relay-sessions.json", {})
+BINDINGS_PATH = ROOT / ".relay-bindings.json"
 
 
-def bind_session(session_id: str, channel: str) -> None:
-    b = _session_bindings()
-    b[session_id] = channel
-    _write_json(ROOT / ".relay-sessions.json", b)
+def _bindings() -> dict:
+    d = _read_json(BINDINGS_PATH, {})
+    d.setdefault("rooms", {})
+    return d
+
+
+def current_session_id() -> str | None:
+    return os.environ.get("RELAY_SESSION_ID") or os.environ.get("CLAUDE_SESSION_ID")
+
+
+def room_owner(channel: str) -> dict | None:
+    """Return the owning conversation record for a room, or None."""
+    return _bindings()["rooms"].get(channel)
+
+
+def owned_room(session_id: str) -> str | None:
+    """The single room this conversation owns, if any."""
+    for ch, info in _bindings()["rooms"].items():
+        if info.get("session_id") == session_id:
+            return ch
+    return None
+
+
+def claim_room(channel: str, session_id: str, transcript: str | None = None) -> tuple[str, str | None]:
+    """Attach this conversation to a room (1:1).
+
+    Returns (status, other) where status is:
+      'claimed'      — room was free, now owned by this session
+      'already-yours'— this session already owned it
+      'conflict'     — owned by a DIFFERENT session (other = that session id); no change
+    """
+    d = _bindings()
+    rooms = d["rooms"]
+    owner = rooms.get(channel)
+    if owner and owner.get("session_id") != session_id:
+        return ("conflict", owner.get("session_id"))
+    status = "already-yours" if owner else "claimed"
+    # enforce 1:1 — drop any other room this conversation held
+    for ch in list(rooms):
+        if ch != channel and rooms[ch].get("session_id") == session_id:
+            del rooms[ch]
+    rooms[channel] = {
+        "session_id": session_id,
+        "transcript": transcript,
+        "bound_at": time.strftime("%Y-%m-%dT%H:%M:%S"),
+    }
+    _write_json(BINDINGS_PATH, d)
+    return (status, None)
+
+
+def release_room(channel: str) -> None:
+    d = _bindings()
+    if channel in d["rooms"]:
+        del d["rooms"][channel]
+        _write_json(BINDINGS_PATH, d)
 
 
 def session_channel() -> str | None:
-    sid = os.environ.get("RELAY_SESSION_ID") or os.environ.get("CLAUDE_SESSION_ID")
-    if not sid:
-        return None
-    return _session_bindings().get(sid)
+    """Resolve the room the current conversation owns (used by resolve_channel)."""
+    sid = current_session_id()
+    return owned_room(sid) if sid else None
+
+
+def bind_session(session_id: str, channel: str, transcript: str | None = None):
+    """Back-compat alias for claim_room (used by `relay bind --session`)."""
+    return claim_room(channel, session_id, transcript)

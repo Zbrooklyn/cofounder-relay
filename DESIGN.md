@@ -127,6 +127,30 @@ the history; it's just not real-time). The same `node.py` code is the watcher �
 started by the session, not run as a background service. "Independent mesh, each side
 self-owned" still holds; it's bound to the live session rather than a standing daemon.
 
+### Conversation ownership (one thread per room) + resume
+A room is owned by exactly **one Claude conversation at a time**, and a conversation
+owns at most one room (1:1). `/discord` *claims* the room for the current conversation
+(identified by its Claude session id) and records it in `.relay-bindings.json`. If a
+different conversation tries to attach to an owned room, it is **refused** (conflict)
+unless `--force` takes it over. This is how the system "remembers the thread it's
+attached to" and never double-attaches (which would race the shared read-cursor).
+
+The binding is **durable across close** — a room stays attached to its conversation
+even while that conversation is closed (so another conversation still can't grab it).
+
+**Resume:** a SessionStart hook (`resume_hook.py`) fires **only on resume** (not on
+brand-new conversations). If the resumed conversation owns a room, it restarts the
+watcher (if not already running) and tells Claude to `/discord check` the backlog.
+Brand-new conversations stay opt-in via `/discord`.
+
+> Open detail being verified: this keys on the Claude **session id**, which is stable
+> when resuming in the same directory (the normal case). The fork case (resume from a
+> different dir → new id) is handled by re-claiming via `/discord`.
+>
+> Known lifecycle gap: the watcher process, once started, currently runs in the
+> background until stopped/reboot rather than dying the instant the conversation
+> closes. Clean teardown-on-close (multi-conversation-safe) is a follow-up.
+
 ## Security
 - Bot token + webhook URLs are credentials → only in gitignored `relay.config.json`; never committed. `.gitignore` blocks config, state, inbox, `.mock`, `.venv`.
 - Send is human-triggered; receive is human-visible (both principals sit in every channel). No autonomous cross-machine action in v1.
