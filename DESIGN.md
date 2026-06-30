@@ -106,22 +106,26 @@ The system is an **independent mesh of self-hosted nodes**, not a hub-and-spoke:
   node that joins the relevant rooms. N-party per channel works for free: each node filters
   out its own posts and ingests everyone else's, so a 3-node room just works.
 
-### The standing local node
-The node is **always-on, but on the owner's machine only** (Edward chose this over a
-session-spun watcher; it's a different risk class from a cross-machine daemon — nothing
-exposed, no external service, just a local catcher). It is a small local supervisor that:
+### The session watcher (alive only while the conversation is open)
+There is **no 24/7 daemon**. The relay is driven from inside a live Claude conversation
+via the **`/discord` slash command**. When you invoke `/discord` in an open conversation,
+it ensures a **watcher** is running *for that conversation*; the watcher **stops when the
+conversation closes**. While alive it:
 - owns this side's Discord credentials and identity,
-- runs **one watcher per channel** the node belongs to (a node is in many rooms at once),
-- maintains a per-channel **inbox** (caught the instant a message arrives, even with no
-  Claude session open) and an **outbox** the node flushes to Discord,
-- exposes a purely local interface (the inbox/outbox files) — **the live Claude talks to
-  its own node, never to Discord directly.**
+- pulls the bound room's inbound messages into a local **inbox**,
+- flushes your **outbox** to Discord,
+- exposes a purely local interface (inbox/outbox files) — **the live Claude talks to its
+  own watcher, never to Discord directly.**
 
-`send` => write to local outbox => node posts to Discord.
-`check` => read this channel's local inbox (already populated by the node).
+`/discord <message>`  => compose => write to outbox => watcher posts to Discord.
+`/discord check`       => read this room's local inbox (populated by the watcher).
 
-This keeps the live Claude decoupled from the Discord API and means nothing is missed
-between sessions. Session-scoped binding (below) ties each conversation to its room.
+**Both sides must have a conversation open to converse live.** A message sent while the
+other side is closed **waits in the Discord channel** and is delivered when they next open
+their conversation and the watcher pulls since last-seen (nothing is lost — Discord holds
+the history; it's just not real-time). The same `node.py` code is the watcher — it's
+started by the session, not run as a background service. "Independent mesh, each side
+self-owned" still holds; it's bound to the live session rather than a standing daemon.
 
 ## Security
 - Bot token + webhook URLs are credentials → only in gitignored `relay.config.json`; never committed. `.gitignore` blocks config, state, inbox, `.mock`, `.venv`.
