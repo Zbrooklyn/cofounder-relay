@@ -1,0 +1,12 @@
+# secrets + runtime state — never commit
+relay.config.json
+.relay-state.json
+.relay-channel
+inbox/
+.mock/
+*.tmp
+
+# python
+__pycache__/
+*.pyc
+.venv/

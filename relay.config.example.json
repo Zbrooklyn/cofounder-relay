@@ -1,0 +1,12 @@
+{
+  "identity": "Edward",
+  "transport": "discord",
+  "discord_bot_token": "PASTE_BOT_TOKEN_HERE",
+  "channels": {
+    "steady-imports": {
+      "channel_id": "PASTE_CHANNEL_ID",
+      "webhook_url": "PASTE_WEBHOOK_URL"
+    }
+  },
+  "_comment": "Copy to relay.config.json (gitignored) and fill in. Set transport to 'mock' for keyless local testing. identity = your name (labels outbound posts). discord_bot_token reads messages; webhook_url posts them."
+}
