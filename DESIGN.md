@@ -86,14 +86,51 @@ This is what ties a Claude session to the right channel so it answers each threa
 ### State — `.relay-state.json` (gitignored)
 Per-channel `last_seen_id`, so `check`/`watch` only return genuinely new messages and survive restarts.
 
+## Topology — independent mesh of local nodes (locked 2026-06-30)
+
+The system is an **independent mesh of self-hosted nodes**, not a hub-and-spoke:
+
+```
+[your Claude] <-> [your node, your PC] <-> Discord <-> [brother's node, his PC] <-> [his Claude]
+                                            (substrate)
+```
+
+- **Every person runs the same node** on their own machine — autonomous, self-owned,
+  holding its own identity + bot token (read) + webhook (post). No central server,
+  no shared secret, each node revocable independently.
+- **Discord is the shared substrate**, not a hub with logic. **Channels are the rooms**
+  where nodes meet; two nodes in a channel form an edge. (Node-layer = true independent
+  mesh; wire-layer = all ride Discord as the common medium. The node design leaves room
+  for a non-Discord edge later, but Discord is the substrate for v1.)
+- **Scales to N peers with no new plumbing.** A third person is just another independent
+  node that joins the relevant rooms. N-party per channel works for free: each node filters
+  out its own posts and ingests everyone else's, so a 3-node room just works.
+
+### The standing local node
+The node is **always-on, but on the owner's machine only** (Edward chose this over a
+session-spun watcher; it's a different risk class from a cross-machine daemon — nothing
+exposed, no external service, just a local catcher). It is a small local supervisor that:
+- owns this side's Discord credentials and identity,
+- runs **one watcher per channel** the node belongs to (a node is in many rooms at once),
+- maintains a per-channel **inbox** (caught the instant a message arrives, even with no
+  Claude session open) and an **outbox** the node flushes to Discord,
+- exposes a purely local interface (the inbox/outbox files) — **the live Claude talks to
+  its own node, never to Discord directly.**
+
+`send` => write to local outbox => node posts to Discord.
+`check` => read this channel's local inbox (already populated by the node).
+
+This keeps the live Claude decoupled from the Discord API and means nothing is missed
+between sessions. Session-scoped binding (below) ties each conversation to its room.
+
 ## Security
 - Bot token + webhook URLs are credentials → only in gitignored `relay.config.json`; never committed. `.gitignore` blocks config, state, inbox, `.mock`, `.venv`.
 - Send is human-triggered; receive is human-visible (both principals sit in every channel). No autonomous cross-machine action in v1.
 - Identity labels are cosmetic/honesty aids, not auth — the auth boundary is "who is in the Discord server."
 
 ## Roadmap (explicitly deferred)
-- **Always-on cross-machine pickup** — a managed watcher that survives session close (the v1 watcher lives with the session).
-- **Instant push to an idle session** — needs harness-level re-invocation (ScheduleWakeup / a host hook).
+- **Instant push to an idle session** — needs harness-level re-invocation (ScheduleWakeup / a host hook). The standing node catches messages instantly; surfacing into an *idle* (no-turn) session is the remaining gap.
+- **Non-Discord edges** — a node-to-node transport that doesn't ride Discord (the node design leaves room; not built).
 - **Receive-side autonomy** — let the receiving Claude *act* on a request, not just surface it (gated; v1 surfaces for the human).
 - **Structured task envelopes** — typed handoffs (task/file/decision) vs plain text.
 - **More than two participants / per-channel roles.**

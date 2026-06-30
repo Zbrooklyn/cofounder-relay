@@ -2,7 +2,10 @@
 relay.config.json
 .relay-state.json
 .relay-channel
+.relay-sessions.json
+.node_alive
 inbox/
+outbox/
 .mock/
 *.tmp
 

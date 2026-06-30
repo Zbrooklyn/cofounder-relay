@@ -20,17 +20,14 @@ from pathlib import Path
 
 import config as cfg_mod
 import transport as transport_mod
+import node as node_mod
 
 ROOT = Path(__file__).resolve().parent.parent
-INBOX_DIR = ROOT / "inbox"
+INBOX_DIR = cfg_mod.INBOX_DIR
 
 
 def _own_label(msg: dict, identity: str) -> bool:
-    """True if this message was sent by *our own* side (so we don't pick up our own posts)."""
-    if msg.get("identity") == identity:
-        return True
-    author = msg.get("author", "")
-    return identity.lower() in author.lower() and msg.get("is_bot")
+    return transport_mod.own_message(msg, identity)
 
 
 def _fmt(msg: dict) -> str:
@@ -51,27 +48,62 @@ def cmd_send(args):
     text = args.text if args.text else sys.stdin.read().strip()
     if not text:
         raise SystemExit("nothing to send (empty message)")
-    msg_id = tp.send(channel, text, cfg["identity"])
-    print(f"sent to '{channel}' as {cfg['identity']}'s Claude (id={msg_id})")
+    if args.now:
+        # Nodeless direct send (no standing node required).
+        msg_id = tp.send(channel, text, cfg["identity"])
+        print(f"sent to '{channel}' directly as {cfg['identity']}'s Claude (id={msg_id})")
+        return
+    # Default: hand to the local node via the outbox; the node delivers to Discord.
+    node_mod.queue_outbound(channel, text, cfg["identity"])
+    if cfg_mod.node_alive():
+        print(f"queued to '{channel}' — node will deliver shortly")
+    else:
+        print(
+            f"queued to '{channel}', but the node is DOWN — start it to deliver:\n"
+            "  python scripts/node.py run   (or re-send with --now for a direct send)"
+        )
+
+
+def _read_inbox(channel: str) -> list[dict]:
+    f = INBOX_DIR / f"{channel}.jsonl"
+    if not f.exists():
+        return []
+    out = []
+    for line in f.read_text(encoding="utf-8").splitlines():
+        line = line.strip()
+        if line:
+            out.append(json.loads(line))
+    return out
 
 
 def cmd_check(args):
     cfg, tp, channel = _get_transport_and_channel(args)
-    last = cfg_mod.get_last_seen(channel)
-    msgs = tp.fetch_since(channel, last, limit=args.limit)
-    fresh = [m for m in msgs if not _own_label(m, cfg["identity"])]
+    if args.direct:
+        # Nodeless: poll Discord directly using the read cursor.
+        last = cfg_mod.get_last_seen(channel)
+        msgs = tp.fetch_since(channel, last, limit=args.limit)
+        new = [m for m in msgs if not _own_label(m, cfg["identity"])]
+        if msgs and not args.peek:
+            cfg_mod.set_last_seen(channel, msgs[-1]["id"])
+    else:
+        # Default: read the node-populated local inbox.
+        lines = _read_inbox(channel)
+        read = cfg_mod.get_inbox_read(channel)
+        new = lines[read:]
+        if not args.peek:
+            cfg_mod.set_inbox_read(channel, len(lines))
+            flag = INBOX_DIR / f"{channel}.new"
+            if flag.exists():
+                flag.unlink()
+
     if args.json:
-        print(json.dumps(fresh, indent=2))
-    elif not fresh:
+        print(json.dumps(new, indent=2))
+    elif not new:
         print(f"no new messages in '{channel}'")
     else:
-        print(f"{len(fresh)} new message(s) in '{channel}':")
-        for m in fresh:
+        print(f"{len(new)} new message(s) in '{channel}':")
+        for m in new:
             print(_fmt(m))
-    # Advance the cursor past everything we fetched (including our own posts),
-    # so we don't re-show them next time.
-    if msgs and not args.peek:
-        cfg_mod.set_last_seen(channel, msgs[-1]["id"])
 
 
 def cmd_watch(args):
@@ -110,6 +142,10 @@ def cmd_watch(args):
 
 
 def cmd_bind(args):
+    if args.session:
+        cfg_mod.bind_session(args.session, args.channel.strip())
+        print(f"bound session '{args.session}' to channel '{args.channel}'")
+        return
     marker = Path.cwd() / ".relay-channel"
     marker.write_text(args.channel.strip() + "\n", encoding="utf-8")
     print(f"bound this directory to channel '{args.channel}' ({marker})")
@@ -138,12 +174,14 @@ def build_parser() -> argparse.ArgumentParser:
 
     s = sub.add_parser("send", help="post a message to this conversation's channel")
     s.add_argument("text", nargs="?", help="message text (or pipe via stdin)")
+    s.add_argument("--now", action="store_true", help="send directly, bypassing the node")
     s.set_defaults(func=cmd_send)
 
-    c = sub.add_parser("check", help="pull new messages since last check")
+    c = sub.add_parser("check", help="show new messages (from the local inbox)")
     c.add_argument("--limit", type=int, default=50)
     c.add_argument("--json", action="store_true", help="emit JSON")
     c.add_argument("--peek", action="store_true", help="don't advance the read cursor")
+    c.add_argument("--direct", action="store_true", help="poll Discord directly, bypassing the node")
     c.set_defaults(func=cmd_check)
 
     w = sub.add_parser("watch", help="live poll loop (Mode 2)")
@@ -152,8 +190,9 @@ def build_parser() -> argparse.ArgumentParser:
     w.add_argument("--max-iterations", type=int, default=0, help="stop after N polls (0=forever)")
     w.set_defaults(func=cmd_watch)
 
-    b = sub.add_parser("bind", help="bind current directory to a channel key")
+    b = sub.add_parser("bind", help="bind this conversation/dir to a channel key")
     b.add_argument("channel")
+    b.add_argument("--session", help="bind a Claude session id (else binds the current directory)")
     b.set_defaults(func=cmd_bind)
 
     ch = sub.add_parser("channels", help="list configured channels")

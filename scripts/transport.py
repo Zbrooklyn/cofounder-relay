@@ -28,6 +28,14 @@ class TransportError(RuntimeError):
     pass
 
 
+def own_message(msg: dict, identity: str) -> bool:
+    """True if a message was sent by our own side (so we never ingest our own posts)."""
+    if msg.get("identity") == identity:
+        return True
+    author = msg.get("author", "")
+    return bool(identity) and identity.lower() in author.lower() and bool(msg.get("is_bot"))
+
+
 def make_transport(cfg: dict):
     kind = cfg.get("transport", "discord")
     if kind == "mock":
