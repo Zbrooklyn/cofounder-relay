@@ -1,6 +1,8 @@
 # cofounder-relay
 
-> A lightweight **agent-to-agent relay** as an **independent mesh of local nodes** — your Claude ↔ your partner's Claude (e.g. your brother on his own machine) — with Discord as the shared pipe in the middle. One channel per conversation. You direct your Claude to send; the other Claude picks it up from its own session.
+> A lightweight **agent-to-agent relay** between two (or more) Claude Code cofounder setups — your Claude ↔ your partner's Claude on their own machine — with Discord as the shared pipe in the middle. One channel per conversation. You direct your Claude to send; the other Claude picks it up from its own session.
+
+**Python 3.11+, no third-party dependencies (stdlib only). MIT licensed. See [CLAUDE.md](CLAUDE.md) for the agent/install guide.**
 
 Each person runs their **own standing local node** (their own machine, their own
 credentials). Discord is just the substrate; channels are the rooms where nodes
