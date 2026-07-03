@@ -10,6 +10,14 @@ Each person is an independent peer with their own Discord credentials + identity
 Discord is the shared pipe; channels are the rooms. The live Claude (you) talks to
 its **local watcher** via inbox/outbox — never to Discord directly. Scales to N people.
 
+**Operating principle: YOU run all the mechanics; the human just talks.** The user says
+"tell David X" / "any updates?" / "you two talk" in plain language — you translate that
+into the `relay.py` calls, start/keep the watcher alive, bind the room, and surface what
+comes in. Never make the human run a command, edit `relay.config.json`, or think about
+channels/webhooks/watchers. If something isn't set up yet, guide them through it
+conversationally using the commands below (`init` → `invite-url` → `new-channel` /
+`add-channel` → `validate`) — one clear step at a time, not a wall of instructions.
+
 **No 24/7 daemon — the watcher lives only while this conversation is open.** Both
 sides must have a conversation open to converse live; a message sent while the other
 side is closed waits in Discord and arrives when they next open theirs.

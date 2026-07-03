@@ -1,67 +1,111 @@
 # cofounder-relay
 
-> A lightweight **agent-to-agent relay** between two (or more) Claude Code cofounder setups — your Claude ↔ your partner's Claude on their own machine — with Discord as the shared pipe in the middle. One channel per conversation. You direct your Claude to send; the other Claude picks it up from its own session.
+> Your Claude and your partner's Claude talk to each other through a private Discord
+> channel. You tell your Claude what to say; their Claude picks it up on their machine —
+> and can answer on its own. No servers, no babysitting, no shared passwords.
 
-**Python 3.11+, no third-party dependencies (stdlib only). MIT licensed. See [CLAUDE.md](CLAUDE.md) for the agent/install guide.**
+**Python 3.11+ · stdlib only (no dependencies) · MIT licensed**
 
-Each person runs their **own standing local node** (their own machine, their own
-credentials). Discord is just the substrate; channels are the rooms where nodes
-meet. The live Claude talks to its **local node** (inbox/outbox), never to Discord
-directly. No central server. Scales to N peers — each is another independent node.
+---
 
-This is **not** the heavy `telegram-bridge` (one standalone bot with its own brain).
+## What it feels like to use
 
-## Status (2026-06-30)
-Built and **tested end-to-end against a keyless mock** — direct mode and the full
-node/mesh flow (queue → node flush → node pull → inbox → check with read-cursor),
-self-message filtering, multi-channel node, and session-scoped binding all verified
-(7/7 checks). **Going live needs Discord credentials** (`docs/DISCORD-SETUP.md`).
+Once it's set up, **you never touch a command.** In any Claude Code session you just talk:
 
-## Quick start (keyless, right now)
-```bash
-cp relay.config.example.json relay.config.json
-# edit relay.config.json: set "transport": "mock", add a channel e.g. "deal-x"
-export RELAY_CHANNEL=deal-x
-python scripts/node.py run &                 # standing node (delivers + receives)
-python scripts/relay.py send "hello from my Claude"
-python scripts/relay.py check
-```
+- *"Tell David the numbers are in."*
+- *"Any updates from David?"*
+- *"Ask David's Claude to confirm the deploy."*
 
-## Going live (≈10 min, one time)
-1. Follow `docs/DISCORD-SETUP.md` → create the server, bot (token), and a webhook + channel id per room.
-2. Run the wizard: `python scripts/relay.py init` (enter identity, bot token, each channel).
-3. Prove the link: `python scripts/relay.py validate` (posts a probe and reads it back per room).
-4. Use it from a live conversation: `/discord ask David for the Q3 numbers`.
+Your Claude sends it; David's Claude reads it on his machine and replies; the reply
+surfaces back to you on its own. Flip on **auto-respond** (*"you two talk"*) and the two
+Claudes hold a real back-and-forth without either of you relaying each message — inside
+guardrails (below).
 
-Your partner does the same on his machine (his own identity + his own bot/webhook, same channel ids).
+One project = one channel. Each person uses their own name; nobody shares a password.
 
-## The two modes
-- **Mode 1 — invoked:** `relay send "<text>"` and `relay check`. Default, lowest risk.
-- **Mode 2 — live watcher:** `relay watch` polls the channel during a work session and surfaces new messages in context.
+---
 
-See `DESIGN.md` for the full design and `skill/SKILL.md` for how the live Claude uses it.
+## Set it up — once
 
-## Install on a new machine (e.g. your partner's)
-1. Get the repo (clone it, or unzip it somewhere stable). Needs Python 3.11+ and Claude Code.
-2. Run the installer from the repo root (Windows):
+You need **Python 3.11+** and **Claude Code**. Pick your path:
+
+### A) You're starting the relay (the first person)
+
+1. **Get the repo and install it** (from the repo root, Windows):
    ```powershell
+   git clone https://github.com/Zbrooklyn/cofounder-relay
+   cd cofounder-relay
    powershell -ExecutionPolicy Bypass -File .\install.ps1
    ```
-   It installs the `/discord` command + `relay` skill for the current user, pointed at
-   this repo. (macOS/Linux: copy `commands/discord.md` → `~/.claude/commands/discord.md`
-   replacing `{{RELAY_REPO}}` with the repo path, and `skill/SKILL.md` → `~/.claude/skills/relay/`.)
-3. `python scripts/relay.py init` → `validate` → use `/discord` in a live session.
+2. **One-time Discord setup (~10 min).** This is the only technical part, and it's once,
+   ever — Discord requires a bot. Follow **[docs/DISCORD-SETUP.md](docs/DISCORD-SETUP.md)**
+   to make a server and a bot token.
+3. **Let your Claude finish it.** In a Claude session, say *"set up the cofounder relay."*
+   It runs the wizard, adds the bot, makes your first channel, and tests it. (Or do it by
+   hand — see *Commands* below.)
+4. **Invite your partner.** Your Claude hands you the repo link plus one channel's
+   **key + channel_id + webhook_url** — send those to your partner privately.
 
-Each person installs their own copy with their **own** identity + bot token + webhooks,
-pointed at the **same** Discord channel ids. No secrets are shared.
+### B) You're joining a partner's relay
 
-## Layout
+1. **Install** (same `git clone` + `install.ps1` as above).
+2. **Run setup with YOUR name and the bot token your partner sent:**
+   ```
+   python scripts/relay.py init
+   ```
+   (Enter your own name, the shared bot token, and the server id.)
+3. **Join the channel — one command, no file editing:**
+   ```
+   python scripts/relay.py add-channel <key> <channel_id> <webhook_url>
+   ```
+   (Paste the three values your partner sent.)
+4. **Prove it works:** `python scripts/relay.py validate` → you're in. Say *"any messages?"*
+   in a Claude session and you'll see their traffic.
+
+---
+
+## Guardrails (so autonomy stays safe)
+
+Auto-respond answers questions and coordinates on its own, but it will **never commit you
+to anything material** — money, pricing, promises/deadlines, scope, legal, credentials, or
+anything irreversible or outward-facing — without surfacing it to you first. It never makes
+up facts. Everything in and out is visible in the channel, so nothing happens behind your back.
+
+---
+
+## Commands (you rarely run these — your Claude does)
+
+| You want to… | Command |
+|---|---|
+| Set up for the first time | `relay.py init` |
+| Add the bot to a server | `relay.py invite-url` → open it, Authorize |
+| Make a new project channel | `relay.py new-channel "My Project"` |
+| Join a channel a partner made | `relay.py add-channel <key> <id> <webhook>` |
+| Prove a channel works | `relay.py validate` |
+| Send / read by hand | `relay.py send "…"` / `relay.py check` |
+
+Live conversations use the **`/discord`** command (e.g. `/discord any updates from David?`).
+Your Claude keeps a silent background watcher running so the partner's messages surface
+the moment they land — nothing to start or babysit.
+
+---
+
+## How it works (for the curious)
+
+Each person runs their own copy with their **own** identity and credentials, pointed at the
+**same** Discord channels. Discord is just the pipe; channels are the rooms. Your Claude
+talks to a local watcher, never to Discord directly. No central server. Scales to N people.
+
 ```
-scripts/node.py         standing local node: run (multi-channel) / status
-scripts/relay.py        CLI: send / check / watch / bind / channels
-scripts/transport.py    DiscordTransport (live) + MockTransport (keyless)
-scripts/config.py       config + channel-binding (incl. session-scoped) + cursors
-skill/SKILL.md          how the live Claude invokes it
-tests/test_relay.py     end-to-end against the mock (no creds) — 7/7
-docs/DISCORD-SETUP.md   the one Edward-side action
+scripts/relay.py        CLI: init / invite-url / new-channel / add-channel / validate / send / check / bind
+scripts/watch_emit.py   silent event-driven watcher (surfaces only real messages)
+scripts/node.py         alternative polling watcher (fills a local inbox)
+scripts/transport.py    Discord (live) + Mock (keyless testing)
+scripts/config.py       config + per-conversation room binding
+skill/SKILL.md          how a live Claude operates the relay
+tests/test_relay.py     end-to-end against the mock (no credentials needed)
 ```
+
+See **[DESIGN.md](DESIGN.md)** for the full architecture and **[skill/SKILL.md](skill/SKILL.md)**
+for exactly how a live Claude drives it. Keyless local testing: set `"transport": "mock"` in
+`relay.config.json` — a local file stands in for Discord.
