@@ -8,8 +8,18 @@ from __future__ import annotations
 
 import json
 import os
+import sys
 import time
 from pathlib import Path
+
+# Windows consoles default to cp1252, which can't encode the 🤖 emoji in author
+# names — printing a message would crash with UnicodeEncodeError. Force UTF-8 on
+# stdout/stderr at import (both CLIs import this module). No-op where unsupported.
+for _stream in (sys.stdout, sys.stderr):
+    try:
+        _stream.reconfigure(encoding="utf-8", errors="replace")
+    except (AttributeError, ValueError):
+        pass
 
 # Repo root = parent of scripts/
 ROOT = Path(__file__).resolve().parent.parent
