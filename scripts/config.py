@@ -50,6 +50,18 @@ def load_config() -> dict:
     return cfg
 
 
+def add_channel(key: str, channel_id: str, webhook_url: str) -> dict:
+    """Add (or overwrite) a channel entry in relay.config.json, preserving the
+    rest of the file (token, guild_id, other channels). Returns the updated cfg."""
+    cfg = _read_json(CONFIG_PATH, {})
+    cfg.setdefault("channels", {})[key] = {
+        "channel_id": str(channel_id),
+        "webhook_url": webhook_url,
+    }
+    _write_json(CONFIG_PATH, cfg)
+    return cfg
+
+
 def resolve_channel(cli_channel: str | None) -> str:
     """Which channel is THIS conversation bound to.
 

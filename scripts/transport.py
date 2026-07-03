@@ -52,7 +52,38 @@ class DiscordTransport:
     def __init__(self, cfg: dict):
         self.cfg = cfg
         self.bot_token = cfg.get("discord_bot_token", "")
+        self.guild_id = str(cfg.get("guild_id", ""))
         self.channels = cfg.get("channels", {})
+
+    def _bot_headers(self) -> dict:
+        if not self.bot_token:
+            raise TransportError("discord_bot_token required for this operation")
+        return {"Authorization": f"Bot {self.bot_token}"}
+
+    def create_channel(self, name: str, topic: str = "") -> dict:
+        """Create a text channel in the configured guild. Needs the bot to have
+        the Manage Channels permission. Returns the created channel object."""
+        if not self.guild_id:
+            raise TransportError("guild_id missing from config — cannot create a channel")
+        payload: dict = {"name": name, "type": 0}  # 0 = GUILD_TEXT
+        if topic:
+            payload["topic"] = topic
+        return self._http(
+            "POST", f"{DISCORD_API}/guilds/{self.guild_id}/channels", payload,
+            headers=self._bot_headers(),
+        )
+
+    def create_webhook(self, channel_id: str, name: str = "relay") -> str:
+        """Create a webhook on a channel and return its full URL. Needs the bot
+        to have the Manage Webhooks permission."""
+        body = self._http(
+            "POST", f"{DISCORD_API}/channels/{channel_id}/webhooks", {"name": name},
+            headers=self._bot_headers(),
+        )
+        wid, wtoken = body.get("id"), body.get("token")
+        if not wid or not wtoken:
+            raise TransportError(f"webhook create returned no token: {body}")
+        return f"https://discord.com/api/webhooks/{wid}/{wtoken}"
 
     def _chan(self, key: str) -> dict:
         c = self.channels.get(key)
@@ -139,6 +170,13 @@ class MockTransport:
         self.cfg = cfg
         self.dir = Path(cfg.get("mock_dir") or (Path(__file__).resolve().parent.parent / ".mock"))
         self.dir.mkdir(exist_ok=True)
+
+    def create_channel(self, name: str, topic: str = "") -> dict:
+        # Keyless stand-in: mint a monotonic-ish id from the clock.
+        return {"id": str(int(time.time() * 1000)), "name": name, "topic": topic}
+
+    def create_webhook(self, channel_id: str, name: str = "relay") -> str:
+        return f"mock://webhook/{channel_id}/{name}"
 
     def _file(self, channel_key: str) -> Path:
         return self.dir / f"{channel_key}.json"

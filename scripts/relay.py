@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 import sys
 import time
 from pathlib import Path
@@ -234,6 +235,39 @@ def cmd_validate(args):
         raise SystemExit(1)
 
 
+def _slugify(name: str) -> str:
+    s = re.sub(r"[^a-z0-9]+", "-", name.strip().lower()).strip("-")
+    return s[:90] or "channel"
+
+
+def cmd_new_channel(args):
+    """Create a Discord channel + webhook via the bot and add it to the config —
+    no browser needed. Requires transport=discord, a guild_id, and the bot to
+    have Manage Channels + Manage Webhooks."""
+    cfg = cfg_mod.load_config()
+    if cfg.get("transport") == "discord" and not cfg.get("guild_id"):
+        raise SystemExit(
+            "guild_id missing from relay.config.json — add your server id, e.g.\n"
+            '  "guild_id": "1522660014404407356"'
+        )
+    key = args.key or _slugify(args.name)
+    if key in cfg.get("channels", {}):
+        raise SystemExit(f"channel key {key!r} already in config — pick another --key or remove it first")
+    tp = transport_mod.make_transport(cfg)
+    slug = _slugify(args.name)
+    ch = tp.create_channel(slug, topic=args.topic or "")
+    cid = str(ch.get("id", ""))
+    if not cid:
+        raise SystemExit(f"channel create returned no id: {ch}")
+    hook = tp.create_webhook(cid, name=f"relay-{key}")
+    cfg_mod.add_channel(key, cid, hook)
+    print(f"created #{slug}  (config key: {key})")
+    print(f"  channel_id : {cid}")
+    print(f"  webhook_url: {hook}")
+    print("added to relay.config.json — restart the node (node.py run) to watch it.")
+    print("partner joins the same room with the SAME key + channel_id + webhook_url.")
+
+
 def cmd_channels(args):
     cfg = cfg_mod.load_config()
     chans = cfg.get("channels", {})
@@ -282,6 +316,12 @@ def build_parser() -> argparse.ArgumentParser:
 
     ch = sub.add_parser("channels", help="list configured channels")
     ch.set_defaults(func=cmd_channels)
+
+    nc = sub.add_parser("new-channel", help="create a Discord channel + webhook via the bot and add it to config (no browser)")
+    nc.add_argument("name", help="human channel name, e.g. 'setup and debugging'")
+    nc.add_argument("--key", help="config key to store it under (default: slug of name)")
+    nc.add_argument("--topic", help="channel topic/description")
+    nc.set_defaults(func=cmd_new_channel)
 
     wi = sub.add_parser("whoami", help="show which room this conversation owns")
     wi.set_defaults(func=cmd_whoami)

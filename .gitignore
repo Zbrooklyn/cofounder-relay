@@ -1,5 +1,6 @@
 # secrets + runtime state — never commit
 relay.config.json
+.env
 .relay-state.json
 .relay-channel
 .relay-bindings.json
