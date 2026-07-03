@@ -13,6 +13,7 @@ Run:  python scripts/relay.py <verb> [args]
 from __future__ import annotations
 
 import argparse
+import base64
 import json
 import re
 import sys
@@ -192,9 +193,14 @@ def cmd_init(args):
         cfg["discord_bot_token"] = ask(
             "Discord bot token (reads messages)", existing.get("discord_bot_token")
         )
+        gid = ask("Discord server (guild) id — enables one-command channel creation; optional",
+                  existing.get("guild_id", ""))
+        if gid:
+            cfg["guild_id"] = gid
     print("\nAdd channels — one per conversation/room. Blank channel key to finish.")
+    print("(Joining a partner's channel? Paste the key + channel_id + webhook_url they sent.)")
     while True:
-        name = input("  channel key (e.g. steady-imports): ").strip()
+        name = input("  channel key (e.g. steady-imports), blank to skip: ").strip()
         if not name:
             break
         cfg["channels"][name] = {
@@ -202,7 +208,11 @@ def cmd_init(args):
             "webhook_url": input("    webhook_url: ").strip(),
         }
     path.write_text(json.dumps(cfg, indent=2), encoding="utf-8")
-    print(f"\nwrote {path}\nNext: python scripts/relay.py validate")
+    print(f"\nwrote {path}")
+    print("Next steps:")
+    print("  • Add the bot to your server:   python scripts/relay.py invite-url")
+    print("  • Create a fresh channel:       python scripts/relay.py new-channel \"My Project\"")
+    print("  • Prove it works:               python scripts/relay.py validate")
 
 
 def cmd_validate(args):
@@ -268,6 +278,34 @@ def cmd_new_channel(args):
     print("partner joins the same room with the SAME key + channel_id + webhook_url.")
 
 
+def cmd_add_channel(args):
+    """Join a channel someone else already created — one command, no JSON editing.
+    Give it the key + the channel_id + webhook_url your partner sent you."""
+    cfg_mod.add_channel(args.key, args.channel_id, args.webhook_url)
+    print(f"joined channel '{args.key}' (id={args.channel_id})")
+    print(f"verify it: python scripts/relay.py --channel {args.key} validate")
+
+
+def cmd_invite_url(args):
+    """Print the bot's install URL (with the permissions the relay needs) so you can
+    add it to a server without hunting through the Discord Developer Portal. The
+    client id is derived from the bot token."""
+    cfg = cfg_mod.load_config()
+    tok = cfg.get("discord_bot_token", "")
+    if not tok:
+        raise SystemExit("no discord_bot_token in config — run: python scripts/relay.py init")
+    first = tok.split(".")[0]
+    try:
+        client_id = base64.urlsafe_b64decode(first + "=" * (-len(first) % 4)).decode()
+        int(client_id)  # sanity: it should be a numeric snowflake
+    except Exception:
+        raise SystemExit("couldn't derive the client id from the bot token — check the token")
+    # View Channels + Read Message History + Manage Channels + Manage Webhooks
+    perms = 536937488
+    print("Open this, pick your server, Authorize:")
+    print(f"https://discord.com/oauth2/authorize?client_id={client_id}&permissions={perms}&scope=bot")
+
+
 def cmd_channels(args):
     cfg = cfg_mod.load_config()
     chans = cfg.get("channels", {})
@@ -322,6 +360,15 @@ def build_parser() -> argparse.ArgumentParser:
     nc.add_argument("--key", help="config key to store it under (default: slug of name)")
     nc.add_argument("--topic", help="channel topic/description")
     nc.set_defaults(func=cmd_new_channel)
+
+    ac = sub.add_parser("add-channel", help="join a channel a partner already created (no JSON editing)")
+    ac.add_argument("key", help="channel key, e.g. steady-imports")
+    ac.add_argument("channel_id", help="the channel_id your partner sent")
+    ac.add_argument("webhook_url", help="the webhook_url your partner sent")
+    ac.set_defaults(func=cmd_add_channel)
+
+    iu = sub.add_parser("invite-url", help="print the bot install URL (derived from the token) to add it to a server")
+    iu.set_defaults(func=cmd_invite_url)
 
     wi = sub.add_parser("whoami", help="show which room this conversation owns")
     wi.set_defaults(func=cmd_whoami)
