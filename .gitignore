@@ -1,7 +1,7 @@
 # secrets + runtime state — never commit
 relay.config.json
 .env
-.watch-emit-state.json
+.watch-emit-*.json
 .relay-state.json
 .relay-channel
 .relay-bindings.json

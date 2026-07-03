@@ -18,12 +18,21 @@ Entry points (from the cofounder-relay repo):
 - `python scripts/node.py run`   — the watcher (start in BACKGROUND for this conversation)
 - `python scripts/relay.py …`    — what you call per turn
 
-## First: make sure the watcher is live for this conversation
+## First: start the watcher for THIS conversation's room
+Prefer the silent, event-driven watcher and arm it as a background Monitor scoped to
+YOUR channel. It stays completely silent until a real message lands, then surfaces
+exactly that one message — no timed-poll noise in the chat:
 ```
-python scripts/node.py status            # ALIVE or DOWN
-python scripts/node.py run               # start in background; it dies with the conversation
+# arm as a persistent background Monitor, scoped to this conversation's room:
+python scripts/watch_emit.py <your-channel-key>
 ```
-If the watcher is DOWN, sends queue but won't deliver until it's running.
+Each new partner message becomes one event you surface (and, in auto-respond mode,
+answer on your own). One watcher per conversation, each scoped to its own room, so
+sessions on the same machine never cross streams.
+
+Fallback if your harness has no Monitor primitive: run `python scripts/node.py run` in
+the background (a silent poller that fills a local inbox you read with `relay.py check`).
+If no watcher is running, sends still queue but inbound won't surface until one is.
 
 ## Bind this conversation to its room (once per conversation)
 So this session answers from the right channel without passing --channel every time:

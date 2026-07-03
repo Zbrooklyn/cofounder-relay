@@ -23,22 +23,28 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 import config as cfg_mod           # noqa: E402
 import transport as transport_mod  # noqa: E402
 
-STATE = cfg_mod.ROOT / ".watch-emit-state.json"
 POLL_SECONDS = 12
 
 
-def _load_state() -> dict:
-    if STATE.exists():
+def _state_path(channels: list) -> Path:
+    # One state file per channel set, so multiple watchers on the same machine
+    # (one per conversation/room) never clobber each other's cursor.
+    slug = "-".join(sorted(channels)) or "all"
+    return cfg_mod.ROOT / f".watch-emit-{slug}.json"
+
+
+def _load_state(path: Path) -> dict:
+    if path.exists():
         try:
-            return json.loads(STATE.read_text(encoding="utf-8-sig") or "{}")
+            return json.loads(path.read_text(encoding="utf-8-sig") or "{}")
         except Exception:
             return {}
     return {}
 
 
-def _save_state(state: dict) -> None:
+def _save_state(path: Path, state: dict) -> None:
     try:
-        STATE.write_text(json.dumps(state), encoding="utf-8")
+        path.write_text(json.dumps(state), encoding="utf-8")
     except Exception:
         pass  # best-effort; losing a save just means a possible re-emit
 
@@ -46,9 +52,20 @@ def _save_state(state: dict) -> None:
 def main() -> None:
     cfg = cfg_mod.load_config()
     identity = cfg["identity"]
-    channels = list(cfg.get("channels", {}).keys())
-    state = _load_state()
-    print(f"[watch] up: watching {channels} as {identity}", file=sys.stderr, flush=True)
+    all_ch = list(cfg.get("channels", {}).keys())
+    # Optional channel filter: `watch_emit.py <chanA> <chanB>` watches only those
+    # (so one conversation owns its room and ignores others). No args = watch all.
+    requested = [a for a in sys.argv[1:] if not a.startswith("-")]
+    if requested:
+        channels = [c for c in requested if c in all_ch]
+        missing = [c for c in requested if c not in all_ch]
+        if missing:
+            print(f"[watch] ignoring unknown channels: {missing}", file=sys.stderr, flush=True)
+    else:
+        channels = all_ch
+    state_path = _state_path(channels)
+    state = _load_state(state_path)
+    print(f"[watch] up: watching {channels} as {identity} (state {state_path.name})", file=sys.stderr, flush=True)
 
     while True:
         for ch in channels:
@@ -59,7 +76,7 @@ def main() -> None:
                     # Anchor to newest existing message; do not replay history.
                     msgs = tp.fetch_since(ch, None, limit=1)
                     state[ch] = msgs[-1]["id"] if msgs else "0"
-                    _save_state(state)
+                    _save_state(state_path, state)
                     continue
                 msgs = tp.fetch_since(ch, last, limit=50)
                 if not msgs:
@@ -69,7 +86,7 @@ def main() -> None:
                         text = (m.get("text") or "").replace("\n", " ").strip()
                         print(f"{ch} | {m.get('author', '?')}: {text}", flush=True)
                 state[ch] = msgs[-1]["id"]
-                _save_state(state)
+                _save_state(state_path, state)
             except Exception as e:  # transient API/network — skip this pass, keep going
                 print(f"[watch] {ch} poll error: {e}", file=sys.stderr, flush=True)
         time.sleep(POLL_SECONDS)

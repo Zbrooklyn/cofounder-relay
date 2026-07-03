@@ -22,8 +22,11 @@ Do this:
    If it reports a conflict (already attached to a different conversation), tell the
    user and ask before using `--force`. Don't double-attach.
 
-2. **Ensure the watcher is live.** Run `node.py status`; if DOWN, start `node.py run`
-   in the BACKGROUND (it runs for the life of this conversation).
+2. **Start the watcher for this room.** Arm a persistent background Monitor running
+   `python scripts/watch_emit.py <this-channel-key>` — silent until a real message lands,
+   then it surfaces exactly that one (no timed-poll noise). One watcher per conversation,
+   scoped to its own channel. (Fallback with no Monitor: `node.py run` in the background +
+   read via `relay.py check`.)
 
 3. **Act on `$ARGUMENTS`:**
    - read intent ("check", "any messages", "what did he say") → `relay.py check` and
