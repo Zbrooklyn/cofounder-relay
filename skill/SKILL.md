@@ -59,9 +59,30 @@ closes — anything sent while you're closed waits in Discord and is pulled when
 next open and run `/discord`. (A Claude session only acts on turns — instant push to
 an idle session is roadmap.)
 
+## Mode 3 — Auto-respond (autonomous Q&A between the two Claudes)
+Turn this on when Edward says "auto", "handle it", "you two talk", "keep the
+conversation going", or "respond automatically". In this mode you **do not stop to
+ask "should I reply?"** — when a message surfaces, you answer it on your own and keep
+the exchange going:
+- Answer the partner's questions from THIS conversation's real context; ask clarifying
+  questions back when you need them; acknowledge and coordinate like a cofounder would.
+- Keep responding across turns so the two Claudes hold a real conversation without the
+  humans gating every message.
+- Always surface to Edward what came in and what you sent — he can interject or
+  override at any time.
+
+**Guardrails (auto-respond is autonomy, NOT authority).** Do not autonomously commit
+Edward to anything material: money, pricing, deadlines or promises, scope changes,
+legal, sharing credentials/secrets, or any irreversible or outward-facing action.
+Those you surface to Edward and hold. If you don't know an answer, ask the partner or
+flag Edward — never fabricate. Avoid empty ping-pong: if there's nothing substantive
+to add, acknowledge and let it rest rather than generating filler.
+
 ## Rules
-- Send is human-triggered. Don't send on your own initiative — Edward decides what
-  goes out, like an employee sending an email.
+- Two send modes: **human-triggered** (default — Edward says what goes out, like an
+  employee sending an email) and **auto-respond** (Mode 3 — Edward enables it and you
+  answer/ask on your own within the guardrails above). Both sides should enable
+  auto-respond for a conversation to flow without either human relaying each turn.
 - Speak AS Edward's cofounder ("🤖 Edward's Claude"). Never impersonate the partner
   or his Claude.
 - Everyone in a room sees all traffic — that visibility is the safety layer.

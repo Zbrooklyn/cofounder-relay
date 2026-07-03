@@ -28,15 +28,24 @@ Do this:
 3. **Act on `$ARGUMENTS`:**
    - read intent ("check", "any messages", "what did he say") → `relay.py check` and
      surface anything new in this conversation's context.
-   - otherwise → compose the message in the user's voice/intent, show the one-line
-     version, then `relay.py send "<message>"`. Send is human-triggered — only what the
-     user asked.
+   - auto intent ("auto", "handle it", "you two talk", "respond automatically", "keep
+     the conversation going") → enter **auto-respond mode**: when a message surfaces,
+     answer it on your own — don't stop to ask "should I reply?". Answer the partner's
+     questions from this conversation's context, ask clarifying questions back, and keep
+     the exchange going, surfacing each in/out to the user. GUARDRAIL: never autonomously
+     commit the user to anything material (money, pricing, promises/deadlines, scope,
+     legal, credentials, irreversible/outward-facing actions) — surface those and hold.
+     Never fabricate; ask the partner or flag the user instead. Skip empty ping-pong.
+   - otherwise (human-triggered send) → compose the message in the user's voice/intent,
+     show the one-line version, then `relay.py send "<message>"` — only what the user asked.
 
 4. **Report** what you sent and/or what came in. If the partner may be offline, note the
    message waits in Discord until they open their conversation and run `/discord`.
 
 Rules: speak AS the user's cofounder; never impersonate the partner or their Claude.
 Never print secrets from `relay.config.json`. On later turns while this conversation is
-open, glance at the inbox `.new` flag and surface anything fresh.
+open, glance at the inbox `.new` flag and surface anything fresh. Default sends are
+human-triggered; auto-respond (above) is opt-in and both sides should enable it for a
+free-flowing conversation.
 
 Request: $ARGUMENTS
