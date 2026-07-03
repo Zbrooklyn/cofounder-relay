@@ -43,7 +43,17 @@ def _read_json(path: Path, default: dict) -> dict:
 def _write_json(path: Path, data: dict) -> None:
     tmp = path.with_suffix(path.suffix + ".tmp")
     tmp.write_text(json.dumps(data, indent=2), encoding="utf-8")
-    tmp.replace(path)  # atomic on the same volume
+    # tmp.replace is atomic, but on Windows os.replace transiently fails with
+    # PermissionError (WinError 5) when another process (the node poller) or
+    # Dropbox holds a handle on the target. Retry briefly before giving up.
+    for attempt in range(6):
+        try:
+            tmp.replace(path)
+            return
+        except PermissionError:
+            if attempt == 5:
+                raise
+            time.sleep(0.15)
 
 
 def load_config() -> dict:
