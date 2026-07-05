@@ -29,6 +29,10 @@ Do this:
    read via `relay.py check`.)
 
 3. **Act on `$ARGUMENTS`:**
+   - list intent ("list", "rooms", "what channels", "what conversations exist") →
+     `relay.py rooms` and show the overview: which rooms are free (with the one-line
+     `/discord <room> auto` to join each), which are in use, and which is THIS one.
+     Don't bind or start a watcher for a bare list request.
    - read intent ("check", "any messages", "what did he say") → `relay.py check` and
      surface anything new in this conversation's context.
    - auto intent ("auto", "handle it", "you two talk", "respond automatically", "keep

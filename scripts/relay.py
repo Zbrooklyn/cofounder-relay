@@ -350,6 +350,31 @@ def cmd_channels(args):
         print(f"  {key}: id={has_id} {has_hook}")
 
 
+def cmd_rooms(args):
+    """Friendly overview: every configured room and whether it's FREE, owned by THIS
+    conversation, or in use by another. This is the `/discord list` view — the thing
+    you glance at to know what you can join. Never prints secrets."""
+    cfg = cfg_mod.load_config()
+    chans = cfg.get("channels", {})
+    if not chans:
+        print('no rooms yet — create one with:  relay.py new-channel "<name>"')
+        return
+    sid = cfg_mod.current_session_id()
+    mine = set(cfg_mod.owned_rooms(sid)) if sid else set()
+    print(f"relay rooms (you are '{cfg['identity']}'):")
+    for key in chans:
+        owner = cfg_mod.room_owner(key)
+        if key in mine:
+            status = "<- THIS conversation is here"
+        elif owner and owner.get("session_id"):
+            status = f"in use by another conversation (since {owner.get('bound_at', '?')})"
+        else:
+            status = f"free -> join with:  /discord {key} auto"
+        print(f"  #{key}: {status}")
+    if not sid:
+        print("(set RELAY_SESSION_ID to mark which room THIS conversation owns)")
+
+
 # --------------------------------------------------------------------------- #
 # Parser
 # --------------------------------------------------------------------------- #
@@ -385,6 +410,9 @@ def build_parser() -> argparse.ArgumentParser:
 
     ch = sub.add_parser("channels", help="list configured channels")
     ch.set_defaults(func=cmd_channels)
+
+    rm = sub.add_parser("rooms", aliases=["list"], help="friendly room overview: which are free, which are in use, which is THIS conversation's")
+    rm.set_defaults(func=cmd_rooms)
 
     nc = sub.add_parser("new-channel", help="create a Discord channel + webhook via the bot and add it to config (no browser)")
     nc.add_argument("name", help="human channel name, e.g. 'setup and debugging'")
