@@ -30,6 +30,33 @@ Write-Host "Next steps:"
 Write-Host "  1. python `"$repo\scripts\relay.py`" init       # enter your identity, bot token, channels"
 Write-Host "  2. python `"$repo\scripts\relay.py`" validate   # prove post+read works per channel"
 Write-Host "  3. In a live Claude session: /discord send a test"
-Write-Host ""
-Write-Host "Optional (auto-reconnect on /resume): add a SessionStart hook (matcher 'resume')"
-Write-Host "to ~/.claude/settings.json running:  python `"$repo\scripts\resume_hook.py`""
+# 4. Register the resume hook so a bound relay conversation auto-reattaches on /resume
+#    (silent for brand-new conversations). Idempotent — skips if already present.
+$settingsPath = Join-Path $claude "settings.json"
+$hookCmd = "python `"$repo\scripts\resume_hook.py`""
+if (Test-Path $settingsPath) {
+    $settings = Get-Content $settingsPath -Raw | ConvertFrom-Json
+} else {
+    $settings = [PSCustomObject]@{}
+}
+if (-not $settings.PSObject.Properties['hooks']) {
+    $settings | Add-Member -NotePropertyName hooks -NotePropertyValue ([PSCustomObject]@{})
+}
+if (-not $settings.hooks.PSObject.Properties['SessionStart']) {
+    $settings.hooks | Add-Member -NotePropertyName SessionStart -NotePropertyValue @()
+}
+$already = $false
+foreach ($entry in @($settings.hooks.SessionStart)) {
+    foreach ($h in @($entry.hooks)) { if ($h.command -like '*resume_hook.py*') { $already = $true } }
+}
+if (-not $already) {
+    $newEntry = [PSCustomObject]@{
+        matcher = 'resume'
+        hooks   = @([PSCustomObject]@{ type = 'command'; command = $hookCmd })
+    }
+    $settings.hooks.SessionStart = @($settings.hooks.SessionStart) + $newEntry
+    ($settings | ConvertTo-Json -Depth 12) | Set-Content -Path $settingsPath -Encoding UTF8
+    Write-Host "registered resume hook -> the relay auto-reattaches when you /resume a bound conversation"
+} else {
+    Write-Host "resume hook already registered"
+}
