@@ -95,6 +95,18 @@ Those you surface to Edward and hold. If you don't know an answer, ask the partn
 flag Edward — never fabricate. Avoid empty ping-pong: if there's nothing substantive
 to add, acknowledge and let it rest rather than generating filler.
 
+## Handshake — confirmed two-way connection (auto mode)
+Joining a room shouldn't be silent guesswork — both sides should SEE the link is live.
+So on an **auto-mode join**, right after arming the watcher, announce presence:
+```
+python scripts/relay.py --channel <room> hello        # posts [RELAY CONNECT]
+```
+The partner's side answers once with `[RELAY CONNECT-ACK]`. If instead YOU receive a
+partner's `[RELAY CONNECT]` first, acknowledge once with `hello --ack`. You're
+connected two-way once a CONNECT and its ACK have crossed. **Never ack an ack, never
+ack your own connect** (no ping-pong). Surface the confirmed handshake to the human so
+they know both AIs are connected + listening — not just one side hopeful.
+
 ## Standing protocol — code updates are ALWAYS announced (both sides stay in sync)
 The relay code itself evolves, and both machines must run the same version. So there
 is one non-negotiable rule: **every push to the shared repo is announced on the

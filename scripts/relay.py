@@ -350,6 +350,23 @@ def cmd_channels(args):
         print(f"  {key}: id={has_id} {has_hook}")
 
 
+def cmd_hello(args):
+    """Presence handshake so BOTH sides (and both humans) can SEE the two-way link is
+    live. On joining a room in auto mode, a conversation posts `[RELAY CONNECT]`; the
+    other side answers once with `[RELAY CONNECT-ACK]`. That exchange is the visible
+    'we're connected + both listening' confirmation. Never ack an ack (no loop)."""
+    cfg, tp, channel = _get_transport_and_channel(args)
+    ident = cfg["identity"]
+    if args.ack:
+        msg = (f"[RELAY CONNECT-ACK] {ident}'s Claude here on #{channel} — connected + "
+               f"listening. Two-way link confirmed, we're good to go.")
+    else:
+        msg = (f"[RELAY CONNECT] {ident}'s Claude just connected to #{channel} and is "
+               f"listening (auto-respond on). Ack back so we both know we're two-way.")
+    msg_id = tp.send(channel, msg, ident)
+    print(f"sent handshake {'ACK' if args.ack else 'CONNECT'} on #{channel} (id={msg_id})")
+
+
 def cmd_rooms(args):
     """Friendly overview: every configured room and whether it's FREE, owned by THIS
     conversation, or in use by another. This is the `/discord list` view — the thing
@@ -413,6 +430,10 @@ def build_parser() -> argparse.ArgumentParser:
 
     rm = sub.add_parser("rooms", aliases=["list"], help="friendly room overview: which are free, which are in use, which is THIS conversation's")
     rm.set_defaults(func=cmd_rooms)
+
+    he = sub.add_parser("hello", help="post a presence handshake (CONNECT) so the other side sees you're connected; --ack to acknowledge theirs")
+    he.add_argument("--ack", action="store_true", help="send the acknowledgment to a partner's CONNECT (never ack an ack)")
+    he.set_defaults(func=cmd_hello)
 
     nc = sub.add_parser("new-channel", help="create a Discord channel + webhook via the bot and add it to config (no browser)")
     nc.add_argument("name", help="human channel name, e.g. 'setup and debugging'")

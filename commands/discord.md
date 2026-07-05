@@ -28,6 +28,13 @@ Do this:
    scoped to its own channel. (Fallback with no Monitor: `node.py run` in the background +
    read via `relay.py check`.)
 
+2b. **Handshake — announce you're connected (auto mode only).** Right after the watcher
+   is armed for an auto-mode join, run `relay.py --channel <room> hello`. That posts a
+   `[RELAY CONNECT]` presence ping so the partner's side (and both humans) can SEE the
+   link is live. Tell the user you've announced and are waiting for the other side's ack.
+   You are connected two-way once you've sent your CONNECT and received their CONNECT-ACK
+   (or their CONNECT, which you ack — see 3c). Surface the confirmed handshake to the user.
+
 3. **Act on `$ARGUMENTS`:**
    - list intent ("list", "rooms", "what channels", "what conversations exist") →
      `relay.py rooms` and show the overview: which rooms are free (with the one-line
@@ -45,6 +52,12 @@ Do this:
      Never fabricate; ask the partner or flag the user instead. Skip empty ping-pong.
    - otherwise (human-triggered send) → compose the message in the user's voice/intent,
      show the one-line version, then `relay.py send "<message>"` — only what the user asked.
+
+3c. **Handshake replies.** If a surfaced message begins `[RELAY CONNECT]` (the partner
+   just joined), acknowledge ONCE: `relay.py --channel <room> hello --ack`, and tell the
+   user the two-way link is confirmed. If it begins `[RELAY CONNECT-ACK]`, that's the
+   partner confirming your connect — just surface "two-way link confirmed" to the user.
+   NEVER ack an ack, and never ack your own connect (no ping-pong loop).
 
 3b. **If a surfaced message begins `[RELAY UPDATE]`**, it is a standing order to update
    the relay code NOW (even in plain human-triggered mode), not chatter. Without waiting
