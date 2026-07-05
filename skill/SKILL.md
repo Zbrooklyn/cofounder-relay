@@ -95,6 +95,34 @@ Those you surface to Edward and hold. If you don't know an answer, ask the partn
 flag Edward — never fabricate. Avoid empty ping-pong: if there's nothing substantive
 to add, acknowledge and let it rest rather than generating filler.
 
+## Standing protocol — code updates are ALWAYS announced (both sides stay in sync)
+The relay code itself evolves, and both machines must run the same version. So there
+is one non-negotiable rule: **every push to the shared repo is announced on the
+updates channel, and every announcement is acted on.** Nobody relays this by hand.
+
+**Shipping (you pushed a change):** the git **pre-push hook** auto-fires
+`relay.py announce "<tip commit subject>"` on every push to `main`, posting a
+`[RELAY UPDATE]` notice with pull + reinstall + verify steps. It's mechanical — you
+don't have to remember. If you ever push from an environment without the hook (or it
+failed), announce manually:
+```
+python scripts/relay.py announce "what changed in one line"
+```
+
+**Receiving (an update announcement lands):** a message beginning `[RELAY UPDATE]`
+is not chatter — it is an instruction to update NOW, even in human-triggered mode.
+Without waiting to be told:
+1. `git pull` in the cofounder-relay repo.
+2. `powershell -ExecutionPolicy Bypass -File .\install.ps1` (re-runs registrars + hooks).
+3. Verify: `git rev-parse HEAD` matches the sender, resume hook still registered,
+   `relay.py channels` looks right. Restart the watcher so the new code is live.
+4. Reply on the channel confirming you're updated + verified (or reporting what broke).
+
+This is how "always know to listen for updates and run them" is guaranteed: senders
+can't push without announcing, and receivers treat an announcement as a pull-and-verify
+order. The updates channel defaults to `setup-and-debugging` (override with a
+`"updates_channel"` key in `relay.config.json`).
+
 ## Rules
 - Two send modes: **human-triggered** (default — Edward says what goes out, like an
   employee sending an email) and **auto-respond** (Mode 3 — Edward enables it and you

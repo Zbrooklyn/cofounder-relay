@@ -32,6 +32,14 @@ catch { Write-Warning "Python 3.11+ not found on PATH. Install it before running
 try { python (Join-Path $repo "scripts\register_hook.py") }
 catch { Write-Warning "could not register the resume hook automatically: $_" }
 
+# 5. Point this repo's git hooks at the tracked pre-push hook, so every push to
+#    main auto-announces the update on the relay channel (partners' AIs then pull
+#    + reinstall). Repo-local config; does not affect other repos.
+try {
+    git -C $repo config core.hooksPath "scripts/git-hooks"
+    Write-Host "installed pre-push auto-announce hook (core.hooksPath -> scripts/git-hooks)"
+} catch { Write-Warning "could not set the git pre-push hook: $_" }
+
 Write-Host ""
 Write-Host "Next steps:"
 Write-Host "  1. python `"$repo\scripts\relay.py`" init       # your identity, bot token, channels"

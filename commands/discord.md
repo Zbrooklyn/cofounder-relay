@@ -42,6 +42,15 @@ Do this:
    - otherwise (human-triggered send) → compose the message in the user's voice/intent,
      show the one-line version, then `relay.py send "<message>"` — only what the user asked.
 
+3b. **If a surfaced message begins `[RELAY UPDATE]`**, it is a standing order to update
+   the relay code NOW (even in plain human-triggered mode), not chatter. Without waiting
+   to be told: `git pull` in the repo → `powershell -ExecutionPolicy Bypass -File
+   .\install.ps1` → verify `git rev-parse HEAD` matches the sender, the resume hook is
+   still registered, and `relay.py channels` looks right → restart the watcher → reply on
+   the channel confirming you're updated + verified (or reporting what broke). Every push
+   to the shared repo auto-announces this way (git pre-push hook), so both sides stay in
+   lockstep automatically.
+
 4. **Report** what you sent and/or what came in. If the partner may be offline, note the
    message waits in Discord until they open their conversation and run `/discord`.
 

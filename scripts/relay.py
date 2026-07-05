@@ -286,6 +286,37 @@ def cmd_add_channel(args):
     print(f"verify it: python scripts/relay.py --channel {args.key} validate")
 
 
+def cmd_announce(args):
+    """Broadcast a standardized UPDATE notice to the updates channel so partners'
+    AIs know to pull + reinstall. Called automatically by the git pre-push hook;
+    can also be run by hand. Silent no-op if no updates channel is configured
+    (so it never blocks a push)."""
+    try:
+        cfg = cfg_mod.load_config()
+    except SystemExit:
+        return
+    chans = cfg.get("channels", {})
+    ch = args.channel or cfg.get("updates_channel")
+    if not ch or ch not in chans:
+        ch = "setup-and-debugging" if "setup-and-debugging" in chans else None
+    if not ch:
+        return  # nowhere to announce — stay silent
+    summary = (args.summary or "").strip() or "new changes on main"
+    msg = (
+        f"[RELAY UPDATE] {summary}\n"
+        f"Other AIs: pull + reinstall to stay in sync, then verify. "
+        f"Steps: `git pull` in the cofounder-relay repo, then "
+        f"`powershell -ExecutionPolicy Bypass -File .\\install.ps1`, then confirm "
+        f"HEAD matches, resume hook registered, and `relay.py channels` looks right. "
+        f"Reply here once you're updated + verified."
+    )
+    try:
+        transport_mod.make_transport(cfg).send(ch, msg, cfg["identity"])
+        print(f"announced update on #{ch}")
+    except Exception as e:
+        print(f"(could not announce update: {e})")  # never blocks the push
+
+
 def cmd_invite_url(args):
     """Print the bot's install URL (with the permissions the relay needs) so you can
     add it to a server without hunting through the Discord Developer Portal. The
@@ -378,6 +409,11 @@ def build_parser() -> argparse.ArgumentParser:
 
     va = sub.add_parser("validate", help="handshake test: post a probe and read it back")
     va.set_defaults(func=cmd_validate)
+
+    an = sub.add_parser("announce", help="broadcast a standardized UPDATE notice so partners' AIs pull + reinstall (auto-fired by the git pre-push hook)")
+    an.add_argument("summary", nargs="?", default="", help="one-line summary of what changed")
+    an.add_argument("--channel", help="channel key to announce on (default: updates_channel, else setup-and-debugging)")
+    an.set_defaults(func=cmd_announce)
     return p
 
 
