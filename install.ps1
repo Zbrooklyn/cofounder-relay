@@ -1,7 +1,9 @@
 # cofounder-relay installer (Windows). Run from the repo root:
 #   powershell -ExecutionPolicy Bypass -File .\install.ps1
 # Installs the /discord slash command + relay skill for the current user, pointed
-# at THIS repo location. Does not touch secrets — you run `relay init` after.
+# at THIS repo location, and registers the resume hook. Does not touch secrets --
+# you run `relay init` after. (ASCII-only on purpose: non-ASCII in a .ps1 crashes
+# Windows PowerShell 5.1.)
 
 $ErrorActionPreference = "Stop"
 $repo = $PSScriptRoot
@@ -23,40 +25,15 @@ Write-Host "installed relay skill -> $skillDir\SKILL.md"
 
 # 3. Python check
 try { python --version | Out-Null; Write-Host "python: OK" }
-catch { Write-Warning "Python 3.11+ not found on PATH — install it before running relay." }
+catch { Write-Warning "Python 3.11+ not found on PATH. Install it before running relay." }
+
+# 4. Register the resume hook (auto-reattach a bound relay conversation on /resume,
+#    silent for brand-new ones). Done in Python so it won't mangle existing settings.
+try { python (Join-Path $repo "scripts\register_hook.py") }
+catch { Write-Warning "could not register the resume hook automatically: $_" }
 
 Write-Host ""
 Write-Host "Next steps:"
-Write-Host "  1. python `"$repo\scripts\relay.py`" init       # enter your identity, bot token, channels"
+Write-Host "  1. python `"$repo\scripts\relay.py`" init       # your identity, bot token, channels"
 Write-Host "  2. python `"$repo\scripts\relay.py`" validate   # prove post+read works per channel"
 Write-Host "  3. In a live Claude session: /discord send a test"
-# 4. Register the resume hook so a bound relay conversation auto-reattaches on /resume
-#    (silent for brand-new conversations). Idempotent — skips if already present.
-$settingsPath = Join-Path $claude "settings.json"
-$hookCmd = "python `"$repo\scripts\resume_hook.py`""
-if (Test-Path $settingsPath) {
-    $settings = Get-Content $settingsPath -Raw | ConvertFrom-Json
-} else {
-    $settings = [PSCustomObject]@{}
-}
-if (-not $settings.PSObject.Properties['hooks']) {
-    $settings | Add-Member -NotePropertyName hooks -NotePropertyValue ([PSCustomObject]@{})
-}
-if (-not $settings.hooks.PSObject.Properties['SessionStart']) {
-    $settings.hooks | Add-Member -NotePropertyName SessionStart -NotePropertyValue @()
-}
-$already = $false
-foreach ($entry in @($settings.hooks.SessionStart)) {
-    foreach ($h in @($entry.hooks)) { if ($h.command -like '*resume_hook.py*') { $already = $true } }
-}
-if (-not $already) {
-    $newEntry = [PSCustomObject]@{
-        matcher = 'resume'
-        hooks   = @([PSCustomObject]@{ type = 'command'; command = $hookCmd })
-    }
-    $settings.hooks.SessionStart = @($settings.hooks.SessionStart) + $newEntry
-    ($settings | ConvertTo-Json -Depth 12) | Set-Content -Path $settingsPath -Encoding UTF8
-    Write-Host "registered resume hook -> the relay auto-reattaches when you /resume a bound conversation"
-} else {
-    Write-Host "resume hook already registered"
-}
