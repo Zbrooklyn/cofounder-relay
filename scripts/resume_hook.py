@@ -2,20 +2,20 @@
 """SessionStart(resume) hook for cofounder-relay.
 
 Fires ONLY when a conversation is *resumed* (not on brand-new conversations).
-If the resumed conversation owns a relay room, it reattaches: starts the local
-node/watcher (if one isn't already running) and tells Claude to catch up on
-messages that arrived while the conversation was closed.
+If the resumed conversation owns a relay room (i.e. this conversation used the
+relay before), it injects a directive telling Claude to auto-reattach: re-arm the
+silent event watcher for that room and resume auto-respond — with no action from
+the human. The watcher resumes from its saved position, so any messages that
+arrived while the conversation was closed surface on reattach; nothing is lost.
 
-No-op (silent) for: non-resume sources, conversations that own no room, or when
-the node is already alive. Reads the hook JSON from stdin.
+No-op (silent) for: non-resume sources (brand-new conversations don't turn this
+on), and conversations that own no room. Reads the hook JSON from stdin.
 
 Wire into ~/.claude/settings.json under hooks.SessionStart with matcher "resume".
 """
 from __future__ import annotations
 
 import json
-import os
-import subprocess
 import sys
 from pathlib import Path
 
@@ -25,40 +25,31 @@ sys.path.insert(0, str(SCRIPTS))
 import config as cfg_mod  # noqa: E402
 
 
-def _start_node_detached():
-    flags = 0
-    if os.name == "nt":
-        flags = 0x00000008 | 0x00000200  # DETACHED_PROCESS | CREATE_NEW_PROCESS_GROUP
-    log = open(REPO / "node.out", "a", encoding="utf-8")
-    subprocess.Popen(
-        [sys.executable, str(SCRIPTS / "node.py"), "run"],
-        stdout=log, stderr=log, stdin=subprocess.DEVNULL,
-        creationflags=flags, close_fds=True, cwd=str(REPO),
-    )
-
-
 def main():
     try:
         data = json.load(sys.stdin)
     except Exception:
         return  # malformed / no input — stay silent
     if data.get("source") != "resume":
-        return  # resume-only, per Edward
+        return  # resume-only: brand-new conversations do NOT auto-start the relay
     sid = data.get("session_id")
     if not sid:
         return
-    room = cfg_mod.owned_room(sid)
-    if not room:
-        return  # not a relay conversation — nothing to do
-    if not cfg_mod.node_alive():
-        try:
-            _start_node_detached()
-        except Exception as e:
-            print(f"[relay] could not start the watcher automatically: {e}", flush=True)
+    rooms = cfg_mod.owned_rooms(sid)
+    if not rooms:
+        return  # not a relay conversation — nothing to do, stay silent
+
+    watch = SCRIPTS / "watch_emit.py"
+    room_args = " ".join(rooms)
+    label = "room '" + rooms[0] + "'" if len(rooms) == 1 else "rooms " + ", ".join(rooms)
     print(
-        f"[relay] This conversation owns room '{room}'. The watcher is "
-        f"reattached — run `/discord check` to surface any messages received "
-        f"while it was closed.",
+        f"[cofounder-relay] This resumed conversation is bound to relay {label}. "
+        f"AUTO-REATTACH NOW, without waiting for the user: arm a persistent background "
+        f"Monitor running  python \"{watch}\" {room_args}  — it resumes from its saved "
+        f"position, so any messages received while this conversation was closed will "
+        f"surface. Then operate in AUTO-RESPOND mode for these rooms per the relay skill "
+        f"(answer the partner's messages on your own within the skill's guardrails, "
+        f"surfacing each in/out to the user). Surface anything that comes through.",
         flush=True,
     )
 

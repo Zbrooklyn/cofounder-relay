@@ -171,11 +171,15 @@ def room_owner(channel: str) -> dict | None:
 
 
 def owned_room(session_id: str) -> str | None:
-    """The single room this conversation owns, if any."""
-    for ch, info in _bindings()["rooms"].items():
-        if info.get("session_id") == session_id:
-            return ch
-    return None
+    """The first room this conversation owns, if any (back-compat)."""
+    rooms = owned_rooms(session_id)
+    return rooms[0] if rooms else None
+
+
+def owned_rooms(session_id: str) -> list:
+    """All rooms this conversation owns (a conversation may watch several)."""
+    return [ch for ch, info in _bindings()["rooms"].items()
+            if info.get("session_id") == session_id]
 
 
 def claim_room(channel: str, session_id: str, transcript: str | None = None) -> tuple[str, str | None]:
@@ -192,10 +196,8 @@ def claim_room(channel: str, session_id: str, transcript: str | None = None) -> 
     if owner and owner.get("session_id") != session_id:
         return ("conflict", owner.get("session_id"))
     status = "already-yours" if owner else "claimed"
-    # enforce 1:1 — drop any other room this conversation held
-    for ch in list(rooms):
-        if ch != channel and rooms[ch].get("session_id") == session_id:
-            del rooms[ch]
+    # A room has exactly one owning conversation (conflict check above), but a
+    # conversation may own several rooms — so we do NOT drop this session's others.
     rooms[channel] = {
         "session_id": session_id,
         "transcript": transcript,

@@ -168,8 +168,8 @@ def cmd_whoami(args):
     if not sid:
         print("no session id (set RELAY_SESSION_ID); cannot resolve owned room")
         return
-    room = cfg_mod.owned_room(sid)
-    print(f"session {sid}: {'owns room ' + room if room else 'owns no room'}")
+    rooms = cfg_mod.owned_rooms(sid)
+    print(f"session {sid}: {'owns ' + ', '.join(rooms) if rooms else 'owns no room'}")
 
 
 def cmd_init(args):
