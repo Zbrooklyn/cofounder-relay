@@ -17,7 +17,6 @@ from __future__ import annotations
 import json
 import time
 import urllib.error
-import urllib.parse
 import urllib.request
 from pathlib import Path
 
@@ -43,8 +42,6 @@ def make_transport(cfg: dict):
         return MockTransport(cfg)
     if kind == "discord":
         return DiscordTransport(cfg)
-    if kind == "whatsapp":
-        return WhatsAppTransport(cfg)
     raise TransportError(f"unknown transport: {kind!r}")
 
 
@@ -163,78 +160,6 @@ class DiscordTransport:
                     time.sleep(1)
                     continue
                 raise TransportError(f"network error calling Discord {endpoint}: {e}")
-
-
-# --------------------------------------------------------------------------- #
-# WhatsApp (live, via our Cloudflare "hub" Worker)
-# --------------------------------------------------------------------------- #
-# WhatsApp's official API only PUSHES inbound messages to a webhook — you can't
-# poll it the way Discord lets you poll with a bot token. So a small always-on hub
-# (a Cloudflare Worker, see worker/whatsapp-hub.js) sits in the middle: it catches
-# inbound webhooks (Twilio OR Meta), stores them per room, and exposes a plain HTTP
-# API this transport polls. That keeps the ENTIRE relay above this line unchanged —
-# the hub absorbs every WhatsApp-specific detail (provider payloads, the 24h window,
-# number routing). This class only speaks to our own hub, so it's provider-agnostic:
-# switching Twilio<->Meta is a hub config change, nothing here moves.
-#
-# Config (relay.config.json):
-#   "transport": "whatsapp",
-#   "whatsapp": { "hub_url": "https://<worker>.workers.dev", "hub_token": "<shared secret>" }
-#   "channels": { "<room>": {} }   # rooms are routing groups defined in the hub
-class WhatsAppTransport:
-    def __init__(self, cfg: dict):
-        self.cfg = cfg
-        wa = cfg.get("whatsapp", {})
-        self.hub_url = (wa.get("hub_url") or "").rstrip("/")
-        self.hub_token = wa.get("hub_token", "")
-        if not self.hub_url:
-            raise TransportError("whatsapp.hub_url required (deploy worker/whatsapp-hub.js first)")
-
-    def _headers(self) -> dict:
-        h = {"User-Agent": "cofounder-relay/1.0"}
-        if self.hub_token:
-            h["Authorization"] = f"Bearer {self.hub_token}"
-        return h
-
-    def send(self, channel_key: str, text: str, identity: str) -> str:
-        body = self._http(
-            "POST", f"{self.hub_url}/send",
-            {"room": channel_key, "text": text, "identity": identity},
-            headers=self._headers(),
-        )
-        return str(body.get("id", ""))
-
-    def fetch_since(self, channel_key: str, last_id: str | None, limit: int = 50) -> list[dict]:
-        url = f"{self.hub_url}/messages?room={urllib.parse.quote(channel_key)}&limit={limit}"
-        if last_id:
-            url += f"&since={urllib.parse.quote(str(last_id))}"
-        body = self._http("GET", url, None, headers=self._headers())
-        # Hub already returns our normalized shape, oldest-first.
-        return body.get("messages", []) if isinstance(body, dict) else (body or [])
-
-    def _http(self, method: str, url: str, payload: dict | None, headers: dict | None = None, tries: int = 3):
-        data = json.dumps(payload).encode("utf-8") if payload is not None else None
-        endpoint = url.split("?")[0]
-        for attempt in range(tries):
-            req = urllib.request.Request(url, data=data, method=method)
-            req.add_header("Content-Type", "application/json")
-            for k, v in (headers or {}).items():
-                req.add_header(k, v)
-            try:
-                with urllib.request.urlopen(req, timeout=30) as resp:
-                    txt = resp.read().decode("utf-8")
-                    return json.loads(txt) if txt else {}
-            except urllib.error.HTTPError as e:
-                errbody = e.read().decode("utf-8", "replace")
-                if e.code in (429, 502, 503) and attempt < tries - 1:
-                    time.sleep(min(1.5 * (attempt + 1), 5))
-                    continue
-                raise TransportError(f"hub {method} {endpoint} -> {e.code}: {errbody}")
-            except urllib.error.URLError as e:
-                if attempt < tries - 1:
-                    time.sleep(1)
-                    continue
-                raise TransportError(f"network error calling hub {endpoint}: {e}")
 
 
 # --------------------------------------------------------------------------- #
