@@ -96,7 +96,7 @@ class DiscordTransport:
         if not hook:
             raise TransportError(f"channel {channel_key!r} has no webhook_url")
         payload = {
-            "username": f"{IDENTITY_PREFIX} {identity}'s Claude",
+            "username": f"{IDENTITY_PREFIX} {identity}",
             "content": text,
         }
         # ?wait=true makes Discord return the created message (so we get its id)
