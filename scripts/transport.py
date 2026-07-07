@@ -85,6 +85,50 @@ class DiscordTransport:
             raise TransportError(f"webhook create returned no token: {body}")
         return f"https://discord.com/api/webhooks/{wid}/{wtoken}"
 
+    def list_channels(self) -> list[dict]:
+        """Ask the SERVER what text channels exist (self-discovery). Read-only —
+        returns [{id, name, topic}] for every text/announcement channel the bot
+        can see in the guild. This is what lets either side discover rooms the
+        other created without hand-carrying channel ids + webhooks."""
+        if not self.guild_id:
+            raise TransportError("guild_id missing from config — cannot list channels")
+        raw = self._http(
+            "GET", f"{DISCORD_API}/guilds/{self.guild_id}/channels", None,
+            headers=self._bot_headers(),
+        )
+        out = []
+        for c in raw:
+            if c.get("type") in (0, 5):  # 0=GUILD_TEXT, 5=GUILD_ANNOUNCEMENT
+                out.append({
+                    "id": str(c.get("id")),
+                    "name": c.get("name", ""),
+                    "topic": c.get("topic") or "",
+                })
+        return out
+
+    def find_webhook(self, channel_id: str) -> str | None:
+        """Return a reusable relay webhook URL for a channel if one already
+        exists, else None. Read-only. Prefers a relay-named incoming webhook so
+        both sides post through the same hook (username is per-message, so posts
+        still show each side's identity). Needs Manage Webhooks to read tokens."""
+        hooks = self._http(
+            "GET", f"{DISCORD_API}/channels/{channel_id}/webhooks", None,
+            headers=self._bot_headers(),
+        )
+        fallback = None
+        for h in hooks:
+            if h.get("type") != 1 or not h.get("token"):  # 1=incoming webhook w/ token
+                continue
+            url = f"https://discord.com/api/webhooks/{h['id']}/{h['token']}"
+            if str(h.get("name", "")).startswith("relay"):
+                return url
+            fallback = fallback or url
+        return fallback
+
+    def get_or_create_webhook(self, channel_id: str, name: str = "relay") -> str:
+        """Reuse an existing relay webhook on the channel, or create one."""
+        return self.find_webhook(channel_id) or self.create_webhook(channel_id, name=name)
+
     def _chan(self, key: str) -> dict:
         c = self.channels.get(key)
         if not c:
@@ -177,6 +221,16 @@ class MockTransport:
 
     def create_webhook(self, channel_id: str, name: str = "relay") -> str:
         return f"mock://webhook/{channel_id}/{name}"
+
+    def list_channels(self) -> list[dict]:
+        # Keyless stand-in: surface any .json "channels" already on disk.
+        return [{"id": f.stem, "name": f.stem, "topic": ""} for f in self.dir.glob("*.json")]
+
+    def find_webhook(self, channel_id: str) -> str | None:
+        return f"mock://webhook/{channel_id}/relay"
+
+    def get_or_create_webhook(self, channel_id: str, name: str = "relay") -> str:
+        return self.create_webhook(channel_id, name)
 
     def _file(self, channel_key: str) -> Path:
         return self.dir / f"{channel_key}.json"

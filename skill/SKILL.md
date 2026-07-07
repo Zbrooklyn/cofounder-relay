@@ -16,7 +16,8 @@ into the `relay.py` calls, start/keep the watcher alive, bind the room, and surf
 comes in. Never make the human run a command, edit `relay.config.json`, or think about
 channels/webhooks/watchers. If something isn't set up yet, guide them through it
 conversationally using the commands below (`init` → `invite-url` → `new-channel` /
-`add-channel` → `validate`) — one clear step at a time, not a wall of instructions.
+`sync` → `validate`) — one clear step at a time, not a wall of instructions. Partners
+join a room the other made by running `sync` (self-discovery), not by copying ids.
 
 **No 24/7 daemon — the watcher lives only while this conversation is open.** Both
 sides must have a conversation open to converse live; a message sent while the other
@@ -50,6 +51,19 @@ python scripts/relay.py bind <channel-key> --session <this-session-id>
 Use the current Claude session id (set `RELAY_SESSION_ID` to it). After binding,
 `send`/`check` resolve the channel automatically. (Resolution order: --channel >
 session binding > RELAY_CHANNEL > ./.relay-channel file > error — it never guesses.)
+
+## Self-discovery — never hand-carry channel ids again
+When your partner creates a room, you do NOT need them to send you a channel id or
+webhook. Ask the SERVER what rooms exist and wire them in automatically:
+```
+python scripts/relay.py sync     # discover server rooms -> local config (reuses webhooks)
+```
+`rooms` / `list` also self-discover on their own (read-only), so a channel the partner
+just made shows up the next time you list. `sync` is the explicit version and will
+create a webhook where one is missing. This is the durable path — prefer it over
+`add-channel` (which still exists for the rare manual case). Requires `guild_id` +
+`discord_bot_token` in config (both set by `init`); the bot needs View Channels +
+Manage Webhooks (already in the `invite-url` permission set).
 
 ## Mode 1 — Invoked (default)
 

@@ -82,6 +82,33 @@ def add_channel(key: str, channel_id: str, webhook_url: str) -> dict:
     return cfg
 
 
+def sync_discovered(entries: dict) -> list[str]:
+    """Merge server-discovered rooms into config.channels. Only ADDS new keys or
+    FILLS blank fields — never overwrites an existing webhook or channel_id, so a
+    self-discovery pass can't stomp a hand-tuned entry. `entries` is
+    {key: {channel_id, webhook_url}}. Returns the keys newly added."""
+    cfg = _read_json(CONFIG_PATH, {})
+    chans = cfg.setdefault("channels", {})
+    added, changed = [], False
+    for key, info in entries.items():
+        cur = chans.get(key)
+        if cur is None:
+            chans[key] = {
+                "channel_id": str(info.get("channel_id", "")),
+                "webhook_url": info.get("webhook_url", ""),
+            }
+            added.append(key)
+            changed = True
+        else:
+            if not cur.get("channel_id") and info.get("channel_id"):
+                cur["channel_id"] = str(info["channel_id"]); changed = True
+            if not cur.get("webhook_url") and info.get("webhook_url"):
+                cur["webhook_url"] = info["webhook_url"]; changed = True
+    if changed:
+        _write_json(CONFIG_PATH, cfg)
+    return added
+
+
 def resolve_channel(cli_channel: str | None) -> str:
     """Which channel is THIS conversation bound to.
 

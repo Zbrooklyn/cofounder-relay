@@ -275,15 +275,71 @@ def cmd_new_channel(args):
     print(f"  channel_id : {cid}")
     print(f"  webhook_url: {hook}")
     print("added to relay.config.json — restart the node (node.py run) to watch it.")
-    print("partner joins the same room with the SAME key + channel_id + webhook_url.")
+    print("partner joins by running:  python scripts/relay.py sync   (self-discovers it — no ids to copy)")
 
 
 def cmd_add_channel(args):
     """Join a channel someone else already created — one command, no JSON editing.
-    Give it the key + the channel_id + webhook_url your partner sent you."""
+    Give it the key + the channel_id + webhook_url your partner sent you.
+    (Usually unnecessary now — `relay.py sync` self-discovers server channels.)"""
     cfg_mod.add_channel(args.key, args.channel_id, args.webhook_url)
     print(f"joined channel '{args.key}' (id={args.channel_id})")
     print(f"verify it: python scripts/relay.py --channel {args.key} validate")
+
+
+def _discover_rooms(cfg: dict, create: bool):
+    """Core self-discovery: ask the Discord server for its channels and merge any
+    the local config doesn't know yet. Reuses an existing relay webhook per
+    channel; when a channel has none, creates one only if `create` is True
+    (so a read-only `list` never mints webhooks). Returns (added, created, skipped_no_hook)."""
+    tp = transport_mod.make_transport(cfg)
+    existing = cfg.get("channels", {})
+    known_ids = {str(c.get("channel_id")) for c in existing.values() if c.get("channel_id")}
+    discovered, created, skipped = {}, [], []
+    for ch in tp.list_channels():
+        cid, name = ch["id"], ch["name"]
+        if cid in known_ids:
+            continue  # already known under some key
+        key = _slugify(name)
+        if key in existing:
+            continue  # same name, different channel id — don't clobber a known key
+        hook = tp.find_webhook(cid)
+        if not hook:
+            if create:
+                hook = tp.create_webhook(cid, name=f"relay-{key}")
+                created.append(key)
+            else:
+                skipped.append(key)
+                continue
+        discovered[key] = {"channel_id": cid, "webhook_url": hook}
+    added = cfg_mod.sync_discovered(discovered) if discovered else []
+    return added, created, skipped
+
+
+def cmd_sync(args):
+    """Self-discover rooms from the Discord server itself and wire them into local
+    config — so either side picks up channels the other created WITHOUT anyone
+    hand-carrying channel ids + webhooks. Reuses an existing relay webhook per
+    channel; creates one where missing (unless --no-create)."""
+    cfg = cfg_mod.load_config()
+    if cfg.get("transport") != "discord":
+        raise SystemExit("sync only applies to the discord transport")
+    if not cfg.get("guild_id"):
+        raise SystemExit(
+            "guild_id missing from relay.config.json — cannot discover channels.\n"
+            'Add your server id, e.g.  "guild_id": "1522660014404407356"'
+        )
+    added, created, skipped = _discover_rooms(cfg, create=args.create)
+    if added:
+        print(f"discovered {len(added)} new room(s):")
+        for k in added:
+            print(f"  #{k}  ({'created webhook' if k in created else 'reused existing webhook'})")
+        print("run:  python scripts/relay.py rooms   to see them all")
+    else:
+        print("no new rooms — local config already in sync with the server")
+    if skipped:
+        print("channels with no webhook yet (run `sync` to wire them): "
+              + ", ".join("#" + k for k in skipped))
 
 
 def cmd_announce(args):
@@ -370,8 +426,21 @@ def cmd_hello(args):
 def cmd_rooms(args):
     """Friendly overview: every configured room and whether it's FREE, owned by THIS
     conversation, or in use by another. This is the `/discord list` view — the thing
-    you glance at to know what you can join. Never prints secrets."""
+    you glance at to know what you can join. Never prints secrets.
+
+    Self-discovers first: pulls any rooms the server has that this side doesn't
+    know yet (read-only — reuses existing webhooks, never creates one during a
+    plain list), so a channel the partner created shows up here on its own."""
     cfg = cfg_mod.load_config()
+    if cfg.get("transport") == "discord" and cfg.get("guild_id") and not args.no_sync:
+        try:
+            added, _, _ = _discover_rooms(cfg, create=False)
+            if added:
+                print("self-discovered new room(s) from the server: "
+                      + ", ".join("#" + k for k in added))
+            cfg = cfg_mod.load_config()  # reload with the merged rooms
+        except Exception as e:
+            print(f"(couldn't self-discover from the server: {e})")
     chans = cfg.get("channels", {})
     if not chans:
         print('no rooms yet — create one with:  relay.py new-channel "<name>"')
@@ -428,8 +497,13 @@ def build_parser() -> argparse.ArgumentParser:
     ch = sub.add_parser("channels", help="list configured channels")
     ch.set_defaults(func=cmd_channels)
 
-    rm = sub.add_parser("rooms", aliases=["list"], help="friendly room overview: which are free, which are in use, which is THIS conversation's")
+    rm = sub.add_parser("rooms", aliases=["list"], help="friendly room overview: which are free, which are in use, which is THIS conversation's (self-discovers server rooms first)")
+    rm.add_argument("--no-sync", action="store_true", help="skip self-discovery; show only already-configured rooms")
     rm.set_defaults(func=cmd_rooms)
+
+    sy = sub.add_parser("sync", help="self-discover rooms from the Discord server and wire them into config (no ids to copy)")
+    sy.add_argument("--no-create", dest="create", action="store_false", help="only add channels that already have a webhook; don't create webhooks")
+    sy.set_defaults(create=True, func=cmd_sync)
 
     he = sub.add_parser("hello", help="post a presence handshake (CONNECT) so the other side sees you're connected; --ack to acknowledge theirs")
     he.add_argument("--ack", action="store_true", help="send the acknowledgment to a partner's CONNECT (never ack an ack)")
