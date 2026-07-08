@@ -82,6 +82,17 @@ def add_channel(key: str, channel_id: str, webhook_url: str) -> dict:
     return cfg
 
 
+def set_human(name: str, discord_id: str) -> dict:
+    """Register (or overwrite) a human's Discord user id so the `attention` verb
+    can @-mention them for a real push notification. `name` is a short handle
+    (e.g. 'eddie', 'david'); `discord_id` is the numeric Discord user id.
+    Preserves the rest of the file. Returns the updated cfg."""
+    cfg = _read_json(CONFIG_PATH, {})
+    cfg.setdefault("humans", {})[name.strip().lower()] = str(discord_id).strip()
+    _write_json(CONFIG_PATH, cfg)
+    return cfg
+
+
 def sync_discovered(entries: dict) -> list[str]:
     """Merge server-discovered rooms into config.channels. Only ADDS new keys or
     FILLS blank fields — never overwrites an existing webhook or channel_id, so a

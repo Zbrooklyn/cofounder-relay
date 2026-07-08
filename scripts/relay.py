@@ -66,6 +66,40 @@ def cmd_send(args):
         )
 
 
+def cmd_attention(args):
+    """Escalate to a HUMAN: @-mention them so Discord pushes to their phone.
+    For the moment a Claude is blocked on a human decision/approval/credential —
+    so the wait is visible to a person, not buried in agent-to-agent chatter."""
+    cfg, tp, channel = _get_transport_and_channel(args)
+    humans = cfg.get("humans", {})
+    target = args.who.strip().lower()
+    uid = humans.get(target)
+    if not uid:
+        known = ", ".join(sorted(humans)) or "(none registered yet)"
+        raise SystemExit(
+            f"no Discord id registered for '{target}'. Known humans: {known}.\n"
+            f"Register one with:  python scripts/relay.py set-human {target} <discord_user_id>"
+        )
+    body = args.text if args.text else sys.stdin.read().strip()
+    if not body:
+        raise SystemExit("nothing to escalate (empty message)")
+    priority = "APPROVAL NEEDED" if args.approval else "ATTENTION REQUIRED"
+    text = (
+        f"\U0001F534 {priority} — {target.capitalize()}, {cfg['identity']}'s side needs you:\n"
+        f"{body}\n"
+        f"(You were @-mentioned so this reaches your phone. Reply in this channel when handled.)"
+    )
+    # Escalations go direct (never queued behind a possibly-down node) — urgency is the point.
+    msg_id = tp.send(channel, text, cfg["identity"], mention_user_ids=[uid])
+    print(f"escalated to {target} (<@{uid}>) on '{channel}' (id={msg_id})")
+
+
+def cmd_set_human(args):
+    """Register a human's Discord user id so `attention` can @-mention them."""
+    cfg_mod.set_human(args.name, args.discord_id)
+    print(f"registered human '{args.name.strip().lower()}' -> Discord id {args.discord_id}")
+
+
 def _read_inbox(channel: str) -> list[dict]:
     f = INBOX_DIR / f"{channel}.jsonl"
     if not f.exists():
@@ -508,6 +542,17 @@ def build_parser() -> argparse.ArgumentParser:
     he = sub.add_parser("hello", help="post a presence handshake (CONNECT) so the other side sees you're connected; --ack to acknowledge theirs")
     he.add_argument("--ack", action="store_true", help="send the acknowledgment to a partner's CONNECT (never ack an ack)")
     he.set_defaults(func=cmd_hello)
+
+    at = sub.add_parser("attention", help="@-mention a human for a real phone push when a human decision/approval/credential is needed")
+    at.add_argument("who", help="which human (a handle registered via set-human, e.g. eddie or david)")
+    at.add_argument("text", nargs="?", help="what you need from them (or pipe via stdin)")
+    at.add_argument("--approval", action="store_true", help="label it APPROVAL NEEDED instead of ATTENTION REQUIRED")
+    at.set_defaults(func=cmd_attention)
+
+    sh = sub.add_parser("set-human", help="register a human's Discord user id so `attention` can @-mention them")
+    sh.add_argument("name", help="short handle, e.g. eddie or david")
+    sh.add_argument("discord_id", help="numeric Discord user id (enable Developer Mode, right-click the person -> Copy User ID)")
+    sh.set_defaults(func=cmd_set_human)
 
     nc = sub.add_parser("new-channel", help="create a Discord channel + webhook via the bot and add it to config (no browser)")
     nc.add_argument("name", help="human channel name, e.g. 'setup and debugging'")

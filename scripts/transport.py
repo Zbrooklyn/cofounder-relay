@@ -135,7 +135,7 @@ class DiscordTransport:
             raise TransportError(f"channel {key!r} not in config.channels")
         return c
 
-    def send(self, channel_key: str, text: str, identity: str) -> str:
+    def send(self, channel_key: str, text: str, identity: str, mention_user_ids=None) -> str:
         hook = self._chan(channel_key).get("webhook_url")
         if not hook:
             raise TransportError(f"channel {channel_key!r} has no webhook_url")
@@ -143,6 +143,15 @@ class DiscordTransport:
             "username": f"{IDENTITY_PREFIX} {identity}",
             "content": text,
         }
+        # Human-attention escalation: @-mention real people so Discord fires their
+        # push notification. A webhook post only pings if allowed_mentions whitelists
+        # the ids — otherwise <@id> renders as inert text and nobody is notified.
+        if mention_user_ids:
+            ids = [str(u).strip() for u in mention_user_ids if str(u).strip()]
+            if ids:
+                mention_str = " ".join(f"<@{u}>" for u in ids)
+                payload["content"] = f"{mention_str}\n{text}"
+                payload["allowed_mentions"] = {"parse": [], "users": ids}
         # ?wait=true makes Discord return the created message (so we get its id)
         body = self._http("POST", hook + "?wait=true", payload)
         return str(body.get("id", ""))
@@ -241,7 +250,8 @@ class MockTransport:
             return []
         return json.loads(f.read_text(encoding="utf-8") or "[]")
 
-    def send(self, channel_key: str, text: str, identity: str) -> str:
+    def send(self, channel_key: str, text: str, identity: str, mention_user_ids=None) -> str:
+        # mention_user_ids is a live-Discord concern; the mock records the raw text only.
         msgs = self._load(channel_key)
         # Monotonic integer ids, as strings (mirrors Discord snowflake ordering)
         next_id = str((int(msgs[-1]["id"]) + 1) if msgs else 1000)
