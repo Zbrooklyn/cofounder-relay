@@ -172,6 +172,14 @@ class DiscordTransport:
         msgs = []
         for m in reversed(raw):
             author = m.get("author", {})
+            atts = [
+                {
+                    "filename": a.get("filename", ""),
+                    "url": a.get("url", ""),
+                    "size": a.get("size", 0),
+                }
+                for a in m.get("attachments", [])
+            ]
             msgs.append(
                 {
                     "id": str(m.get("id")),
@@ -180,6 +188,7 @@ class DiscordTransport:
                     "text": m.get("content", ""),
                     "ts": m.get("timestamp", ""),
                     "is_bot": bool(author.get("bot")),
+                    "attachments": atts,
                 }
             )
         return msgs

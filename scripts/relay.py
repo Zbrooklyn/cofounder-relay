@@ -142,6 +142,28 @@ def cmd_check(args):
             print(_fmt(m))
 
 
+def cmd_history(args):
+    """Backfill: fetch recent channel history straight from the server,
+    ignoring the local inbox/cursor. Used to REANCHOR on join so past
+    context posted before the watcher armed is never missed."""
+    cfg, tp, channel = _get_transport_and_channel(args)
+    msgs = tp.fetch_since(channel, None, limit=args.limit)
+    if args.json:
+        print(json.dumps(msgs, indent=2))
+        return
+    if not msgs:
+        print(f"no history in '{channel}' (empty channel)")
+        return
+    print(f"{len(msgs)} message(s) of history in '{channel}' (oldest first):")
+    for m in msgs:
+        ts = (m.get("ts", "") or "")[:19].replace("T", " ")
+        mine = " (me)" if _own_label(m, cfg["identity"]) else ""
+        print(f"  [{ts}] {m.get('author', '?')}{mine}: {m.get('text', '')}")
+        for a in m.get("attachments", []):
+            print(f"      ↳ attachment: {a.get('filename', '?')} "
+                  f"({a.get('size', 0)} bytes) {a.get('url', '')}")
+
+
 def cmd_watch(args):
     cfg, tp, channel = _get_transport_and_channel(args)
     INBOX_DIR.mkdir(exist_ok=True)
@@ -514,6 +536,11 @@ def build_parser() -> argparse.ArgumentParser:
     c.add_argument("--peek", action="store_true", help="don't advance the read cursor")
     c.add_argument("--direct", action="store_true", help="poll Discord directly, bypassing the node")
     c.set_defaults(func=cmd_check)
+
+    hi = sub.add_parser("history", help="reanchor: backfill recent channel history from the server (ignores cursor/inbox), including attachments")
+    hi.add_argument("--limit", type=int, default=50)
+    hi.add_argument("--json", action="store_true", help="emit JSON")
+    hi.set_defaults(func=cmd_history)
 
     w = sub.add_parser("watch", help="live poll loop (Mode 2)")
     w.add_argument("--interval", type=int, default=15, help="seconds between polls")
