@@ -84,7 +84,12 @@ def main() -> None:
                 for m in msgs:
                     if not transport_mod.own_message(m, identity):
                         text = (m.get("text") or "").replace("\n", " ").strip()
-                        print(f"{ch} | {m.get('author', '?')}: {text}", flush=True)
+                        line = f"{ch} | {m.get('author', '?')}: {text}"
+                        # Surface file attachments so they never sit unread again —
+                        # Discord holds the file; this exposes its download URL.
+                        for a in m.get("attachments", []):
+                            line += f"  [FILE: {a.get('filename')} -> {a.get('url')}]"
+                        print(line, flush=True)
                 state[ch] = msgs[-1]["id"]
                 _save_state(state_path, state)
             except Exception as e:  # transient API/network — skip this pass, keep going
