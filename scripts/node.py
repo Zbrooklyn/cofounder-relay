@@ -33,11 +33,15 @@ def _outbox_dir(channel: str) -> Path:
     return d
 
 
-def queue_outbound(channel: str, text: str, identity: str) -> Path:
-    """Append a pending outbound message (one file per message — no write races)."""
+def queue_outbound(channel: str, text: str, identity: str, mention_ids=None) -> Path:
+    """Append a pending outbound message (one file per message — no write races).
+    mention_ids: Discord user ids to @-mention so a human gets a push notification."""
     d = _outbox_dir(channel)
     path = d / f"{time.time_ns()}.json"
-    path.write_text(json.dumps({"text": text, "identity": identity}), encoding="utf-8")
+    rec = {"text": text, "identity": identity}
+    if mention_ids:
+        rec["mention_ids"] = list(mention_ids)
+    path.write_text(json.dumps(rec), encoding="utf-8")
     return path
 
 
@@ -61,7 +65,7 @@ def _flush_outbound(tp, channel: str) -> int:
     sent = 0
     for path in sorted(d.glob("*.json")):
         rec = json.loads(path.read_text(encoding="utf-8"))
-        tp.send(channel, rec["text"], rec["identity"])
+        tp.send(channel, rec["text"], rec["identity"], mention_user_ids=rec.get("mention_ids"))
         path.unlink()  # delete only after a successful send
         sent += 1
     return sent

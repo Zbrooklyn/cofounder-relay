@@ -45,20 +45,51 @@ def _get_transport_and_channel(args):
 # --------------------------------------------------------------------------- #
 # Verbs
 # --------------------------------------------------------------------------- #
+def _resolve_tag_ids(cfg, args):
+    """Who to @-mention so a HUMAN gets a push notification for this send.
+
+    Tagging is ON BY DEFAULT: a human-triggered send is meant to reach the partner,
+    and a webhook post pings nobody unless their id is whitelisted — so 'send' tags
+    every registered partner human (all `humans` except the sender's own identity).
+    `--tag <name>` narrows to specific people; `--no-tag` suppresses the ping and is
+    ONLY for agent-to-agent auto-respond chatter, where per-message pings would spam."""
+    if getattr(args, "no_tag", False):
+        return []
+    humans = cfg.get("humans", {}) or {}
+    self_name = str(cfg.get("identity", "")).strip().lower()
+    if getattr(args, "tag", None):
+        ids, missing = [], []
+        for name in (t.strip().lower() for t in args.tag):
+            uid = humans.get(name)
+            ids.append(str(uid)) if uid else missing.append(name)
+        if missing:
+            known = ", ".join(sorted(humans)) or "(none registered)"
+            raise SystemExit(
+                f"no Discord id for {missing} — known humans: {known}.\n"
+                f"Register one with:  relay.py set-human <name> <discord_user_id>")
+        return ids
+    # default: every registered human that isn't us
+    return [str(uid) for name, uid in humans.items()
+            if uid and str(name).strip().lower() != self_name]
+
+
 def cmd_send(args):
     cfg, tp, channel = _get_transport_and_channel(args)
     text = args.text if args.text else sys.stdin.read().strip()
     if not text:
         raise SystemExit("nothing to send (empty message)")
+    tag_ids = _resolve_tag_ids(cfg, args)
+    tagnote = (f" (tagged {len(tag_ids)} human{'' if len(tag_ids) == 1 else 's'})"
+               if tag_ids else " (no human tagged)")
     if args.now:
         # Nodeless direct send (no standing node required).
-        msg_id = tp.send(channel, text, cfg["identity"])
-        print(f"sent to '{channel}' directly as {cfg['identity']}'s Claude (id={msg_id})")
+        msg_id = tp.send(channel, text, cfg["identity"], mention_user_ids=tag_ids or None)
+        print(f"sent to '{channel}' directly as {cfg['identity']}'s Claude (id={msg_id}){tagnote}")
         return
     # Default: hand to the local node via the outbox; the node delivers to Discord.
-    node_mod.queue_outbound(channel, text, cfg["identity"])
+    node_mod.queue_outbound(channel, text, cfg["identity"], mention_ids=tag_ids or None)
     if cfg_mod.node_alive():
-        print(f"queued to '{channel}' — node will deliver shortly")
+        print(f"queued to '{channel}' — node will deliver shortly{tagnote}")
     else:
         print(
             f"queued to '{channel}', but the node is DOWN — start it to deliver:\n"
@@ -528,6 +559,11 @@ def build_parser() -> argparse.ArgumentParser:
     s = sub.add_parser("send", help="post a message to this conversation's channel")
     s.add_argument("text", nargs="?", help="message text (or pipe via stdin)")
     s.add_argument("--now", action="store_true", help="send directly, bypassing the node")
+    s.add_argument("--tag", action="append", metavar="WHO",
+                   help="@-mention a registered human so Discord pushes them a notification "
+                        "(repeatable). Default: every registered partner human is tagged.")
+    s.add_argument("--no-tag", action="store_true",
+                   help="suppress the human ping — ONLY for agent-to-agent auto-respond chatter")
     s.set_defaults(func=cmd_send)
 
     c = sub.add_parser("check", help="show new messages (from the local inbox)")
