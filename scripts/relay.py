@@ -45,15 +45,25 @@ def _get_transport_and_channel(args):
 # --------------------------------------------------------------------------- #
 # Verbs
 # --------------------------------------------------------------------------- #
-def _resolve_tag_ids(cfg, args):
+def _resolve_tag_ids(cfg, args, channel=None):
     """Who to @-mention so a HUMAN gets a push notification for this send.
 
     Tagging is ON BY DEFAULT: a human-triggered send is meant to reach the partner,
     and a webhook post pings nobody unless their id is whitelisted — so 'send' tags
     every registered partner human (all `humans` except the sender's own identity).
     `--tag <name>` narrows to specific people; `--no-tag` suppresses the ping and is
-    ONLY for agent-to-agent auto-respond chatter, where per-message pings would spam."""
+    ONLY for agent-to-agent auto-respond chatter, where per-message pings would spam.
+
+    PER-ROOM OPT-OUT. A room whose config carries `"no_human_mentions": true` has no
+    human recipient at all — it is an agent-to-agent coordination channel (e.g. a
+    ChatGPT<->Claude room). Such a room must never inherit the human-tagging default,
+    so this wins over both the default AND an explicit --tag: there is nobody in the
+    room to notify, and a stray ping pulls a person into a conversation that is not
+    theirs. Use `relay.py attention` when a human genuinely must be pulled in."""
     if getattr(args, "no_tag", False):
+        return []
+    chcfg = (cfg.get("channels") or {}).get(channel) or {}
+    if isinstance(chcfg, dict) and chcfg.get("no_human_mentions"):
         return []
     humans = cfg.get("humans", {}) or {}
     self_name = str(cfg.get("identity", "")).strip().lower()
@@ -78,7 +88,7 @@ def cmd_send(args):
     text = args.text if args.text else sys.stdin.read().strip()
     if not text:
         raise SystemExit("nothing to send (empty message)")
-    tag_ids = _resolve_tag_ids(cfg, args)
+    tag_ids = _resolve_tag_ids(cfg, args, channel)
     tagnote = (f" (tagged {len(tag_ids)} human{'' if len(tag_ids) == 1 else 's'})"
                if tag_ids else " (no human tagged)")
     if args.now:
