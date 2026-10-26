@@ -21,8 +21,8 @@ for _stream in (sys.stdout, sys.stderr):
     except (AttributeError, ValueError):
         pass
 
-# Repo root = parent of scripts/
-ROOT = Path(__file__).resolve().parent.parent
+# Repo root = parent of scripts/ (RELAY_ROOT lets a copy of these scripts that lives elsewhere, e.g. the prompt hook in ~/.claude/hooks/relay, use this repo's data)
+ROOT = Path(os.environ.get("RELAY_ROOT") or Path(__file__).resolve().parent.parent)
 CONFIG_PATH = Path(os.environ.get("RELAY_CONFIG") or (ROOT / "relay.config.json"))
 STATE_PATH = ROOT / ".relay-state.json"
 
